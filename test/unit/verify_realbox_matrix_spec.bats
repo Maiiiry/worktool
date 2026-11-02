@@ -739,7 +739,7 @@ STUB
 _matrix_cleanup_fault() {
     _matrix_child_stub
     sed -i "s/^trap .* TERM$/trap '' TERM/" "${MATRIX_STATE}/child"
-    sed -i '/^touch /i\    printf "resident-ready\\n" >>"${TMPDIR}/capture"' "${MATRIX_STATE}/child"
+    sed -i "/^touch /i\\    printf \"resident-ready\\\\n\" >>\"\${TMPDIR}/capture\"" "${MATRIX_STATE}/child"
     # Simulate undelivered signals at the adapter, with an independent result.
     printf 'verify_stop_group() { return %s; }\n' "$1" \
         >>"${MATRIX_STATE}/repo/lib/verify_run.sh"
@@ -769,6 +769,7 @@ _matrix_assert_recovery() {
 }
 
 @test "#696: interrupted supervisor preserves recovery evidence for a live timed-out child" {
+    local stderr=""
     _matrix_cleanup_fault 0
     run --separate-stderr node "${BATS_TEST_DIRNAME}/fixture/verify_signal.js" TERM bash \
         "${REALBOX}" --allow-real-box 5.4
@@ -778,6 +779,7 @@ _matrix_assert_recovery() {
 }
 
 @test "#696: interrupted supervisor preserves recovery evidence when a resident cannot be stopped" {
+    local stderr=""
     _matrix_cleanup_fault 1
     # The leader terminates normally; its TERM-ignoring resident survives.
     sed -i '/^sleep "${MATRIX_READY_DELAY/,$d' "${MATRIX_STATE}/child"
