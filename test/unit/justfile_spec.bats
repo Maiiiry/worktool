@@ -324,16 +324,14 @@ _assert_namespace_recipe_guidance() {
     _assert_namespace_recipe_guidance test
 }
 
-@test "#707: root namespace descriptions point to their help or recipe listing" {
+@test "#707: root namespace guidance covers every current user recipe" {
     _just --list
     assert_success
-    local _namespace
-    assert_line --regexp '^ +test \.\.\. +# .*just --list test'
-    for _namespace in box verify job; do
-        assert_line --regexp "^ +${_namespace} \\.\\.\\. +# .*just ${_namespace} help"
-    done
-    for _namespace in agent worktree; do
-        assert_line --regexp "^ +${_namespace} \\.\\.\\. +# .*just ${_namespace} lists"
+    local namespace namespaces
+    namespaces="$(_listed_names)"
+    for namespace in $namespaces; do
+        [[ "$namespace" == default ]] && continue
+        _assert_namespace_recipe_guidance "$namespace"
     done
 }
 

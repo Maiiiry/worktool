@@ -183,7 +183,7 @@ mod? box  'script/box/justfile.box'                       # Dev box lifecycle; s
 mod? verify 'script/verify/justfile.verify'               # Acceptance checks of doc/acceptance.md; see just verify help for actions and options.
 mod? agent 'script/agent/justfile.agent'                  # Agent launch without GitHub authentication; just agent lists actions.
 mod? worktree '.agents/script/worktree/justfile.worktree' # Cleanup merged linked worktrees (dry-run by default); just worktree lists actions.
-mod? job '.agents/script/justfile.job'                    # Detached agent jobs and compact results; see just job help for actions and options.
+mod? job '.agents/script/justfile.job'                    # Detached agent jobs and compact results; just job lists actions.
 
 # Default: list the namespaces.
 default:
