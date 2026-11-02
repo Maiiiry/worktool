@@ -34,10 +34,14 @@ _54_cleanup() {
 # Keep recovery usable after the supervisor has exited, not just in its variables.
 _54_keep_recovery() {
     local file row status parent group session rest pid
-    if ! printf '%s\n' "${_54_PID}" >"${_54_W}/cleanup.pid"; then
+    local pid_record=missing recovery_files='capture files'
+    if printf '%s\n' "${_54_PID}" >"${_54_W}/cleanup.pid"; then
+        pid_record="${_54_W}/cleanup.pid"
+        recovery_files='capture files and cleanup.pid'
+    else
         log_error "interrupt cleanup: cannot write PID record (pid=${_54_PID})"
     fi
-    log_error "interrupt cleanup: kept evidence=${_54_W}; pid-record=${_54_W}/cleanup.pid; pid=${_54_PID}"
+    log_error "interrupt cleanup: kept evidence=${_54_W}; pid-record=${pid_record}; pid=${_54_PID}"
     log_error "interrupt cleanup: surviving processes in owned session ${_54_PID}:"
     for file in /proc/[0-9]*/stat; do
         if ! IFS= read -r row 2>/dev/null <"${file}"; then continue; fi
@@ -46,7 +50,7 @@ _54_keep_recovery() {
         pid="${file#/proc/}"
         log_error "interrupt cleanup: surviving process: pid=${pid%/stat} ppid=${parent} pgid=${group} sid=${session} stat=${status}"
     done
-    log_error "interrupt cleanup: manual recovery: inspect capture files and cleanup.pid in ${_54_W}; verify process ownership and PID reuse before sending kill -TERM -- -<pgid> to each surviving owned group; confirm all have stopped before removing the evidence directory"
+    log_error "interrupt cleanup: manual recovery: inspect ${recovery_files} in ${_54_W}; verify process ownership and PID reuse before sending kill -TERM -- -<pgid> to each surviving owned group; confirm all have stopped before removing the evidence directory"
     if [[ -n "${_54_POLL_FD}" ]]; then exec {_54_POLL_FD}>&-; fi
 }
 
