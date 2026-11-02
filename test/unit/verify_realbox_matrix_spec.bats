@@ -767,3 +767,16 @@ _run_cleanup_fault() {
     [[ "${stderr}" == *"manual recovery:"* ]]
     assert_output ''
 }
+
+@test "#696: cleanup stop failure keeps evidence and PID with recovery diagnostics" {
+    _run_cleanup_fault 0 1
+    assert_failure 1
+    [ -f "${MATRIX_STATE}/cleanup-evidence/capture" ]
+    cmp "${MATRIX_STATE}/expected-pid" "${MATRIX_STATE}/remaining-pid"
+    cmp "${MATRIX_STATE}/expected-pid" "${MATRIX_STATE}/cleanup-evidence/cleanup.pid"
+    [[ "${stderr}" == *"kept evidence=${MATRIX_STATE}/cleanup-evidence"* ]]
+    [[ "${stderr}" == *"pid-record=${MATRIX_STATE}/cleanup-evidence/cleanup.pid"* ]]
+    [[ "${stderr}" == *"surviving process: pid="* ]]
+    [[ "${stderr}" == *"manual recovery:"* ]]
+    assert_output ''
+}

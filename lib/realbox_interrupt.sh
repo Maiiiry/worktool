@@ -18,7 +18,7 @@ _54_cleanup() {
             log_info "interrupt cleanup: stopped child rc=${rc} (expected after termination)"
         fi
         _54_stop_session "${_54_PID}" || failed=1
-        if [[ "${rc}" -eq 124 ]]; then
+        if [[ "${failed}" -ne 0 ]]; then
             _54_keep_recovery
             return 1
         fi
