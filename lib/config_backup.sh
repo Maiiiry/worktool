@@ -61,8 +61,10 @@ CFGBK_NAMES=(ghostty worktool tmux-conf)
 
 # The default subset checked for user content outside managed blocks.
 # Acceptance overrides it alongside CFGBK_NAMES. The worktool state file
-# is not one of them: the product writes the whole of it, so "the user's
-# content survived" is not a claim anyone can make about it.
+# has no managed block: it is a key=value file shared through lib/config.sh,
+# so the "lines outside every managed block" check does not apply. Setup
+# changes only its own keys; item 3.2 covers preservation of non-setup lines
+# such as home= and link=.
 CFGBK_USER_NAMES=(ghostty tmux-conf)
 
 # Acceptance can opt individual files into absent parent-chain tracking.
