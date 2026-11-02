@@ -312,6 +312,8 @@ verify 例外只適用於可直接解析的呼叫。無受限動作的日常指�
 | `just job help [args...]` | job.sh 驗證整份參數後顯示 help |
 | `just agent` | 列出 agent 啟動動作 |
 | `just agent codex [--help] -- <Codex 參數...>` | `./script/agent/codex.sh`（headless 無 gh 憑證啟動；`--` 後原樣轉發） |
+| `just worktree` | 列出 worktree 動作 |
+| `just worktree prune-merged [--apply] [--help]` | `./.agents/script/worktree/prune-merged.sh`（先 fetch origin；預設列出已合併且乾淨的同層 linked worktree，`--apply` 才移除並用 `git branch -d` 清分支；保留原因寫到 stderr） |
 | `just test` | `./script/test/test.sh`(全部:lint、unit、matrix、integration、system、acceptance、system-real,依序、遇錯即停) |
 | `just test verify-env [--help]` | `./script/test/verify-env.sh [args]`（建置真實驗收映像，驗證 uid 1001 bind mount 的 Git checkout 與 host 工具） |
 | `just test build [args]` | `./script/test/test.sh --build [args]` |
@@ -326,12 +328,23 @@ verify 例外只適用於可直接解析的呼叫。無受限動作的日常指�
 | `just test acceptance [spec...] [--filter REGEX]` | `./script/test/test.sh --acceptance [spec...] [--filter REGEX]` |
 | `just test selfcheck [args]` | `./script/test/selfcheck.sh [args]`(`--root X` 直接透傳) |
 | `just test help` / `just test h` | `./script/test/test.sh --help` |
+| `just test script-layout [--root <repo>] [--help]` | `./script/test/check-script-layout.sh`（檢查腳本目錄版面與版本產物；可指定 repo） |
 | `just box` | 列出 box 的動詞(`just --justfile script/box/justfile.box --list`) |
 | `just box assemble [args]` | `./script/box/assemble.sh [args]`(`--dry-run`、`--file <清單>`、`--home <路徑>`、`--help`) |
+| `just box bench [--box NAME] [--runs N] [--warmup N] [--max-ms N] [--json] [--shell CMD] [--max-wait N] [-h\|--help]` | `./script/box/bench.sh`（量測 enter、shell、inbox 延遲，各列 min／median／max；預設記錄 10 次、暖身 2 次；`--max-ms` 限制 shell median，`--json` 改輸出 JSON；`--max-wait` 限制等待 host 安靜的秒數，預設 60、CI 為 120） |
 | `just box setup [args]` | `./script/box/setup.sh [args]`(`--auto-enter yes\|no`、`--terminal ghostty\|none`、`--box <名稱>`、`--distrobox <路徑>`、`--dry-run`、`--help`;見 [`enter.md`](enter.md)) |
 | `just box status [args]` | `./script/box/status.sh [args]`(`--help`) |
 | `just box enter [args]` | `./script/box/enter.sh [args]`(`--box <名稱>`、`--distrobox <路徑>`、`--timeout <秒>`、`-- <指令>...`、`--help`;見 [`enter.md`](enter.md)) |
 | `just box help` / `just box h` | 依序 `./script/box/assemble.sh --help`、`./script/box/bench.sh --help`、`./script/box/setup.sh --help`、`./script/box/status.sh --help`、`./script/box/enter.sh --help` |
+| `just verify` | 列出驗收群組並提示尚未執行驗證；exit 0 不代表驗收通過 |
+| `just verify all [-l\|--list] [-h\|--help]` | `./script/verify/all.sh`（依序執行 ui、gate、setup、diagram、evidence，遇錯即停並印出各群組與總 verdict；不執行 realbox；`--list` 只列群組） |
+| `just verify ui [ITEM...] [-l\|--list] [-h\|--help]` | `./script/verify/ui.sh`（驗收 1.1：box 命名空間介面；省略 ITEM 執行全部、遇錯即停；`--list` 列項目） |
+| `just verify gate [ITEM...] [-l\|--list] [-h\|--help]` | `./script/verify/gate.sh`（驗收 2.1–2.4：自動化 gate、TDD 證據與負向案例；省略 ITEM 執行全部、遇錯即停；`--list` 列項目） |
+| `just verify setup [--allow-real-box] [ITEM...] [--list] [-h\|--help]` | `./script/verify/setup.sh`（驗收 3.1–3.13：暫存 HOME 下的自動進盒設定與狀態；省略 ITEM 執行全部、遇錯即停；這些項目皆不需要 `--allow-real-box`；`--list` 列項目與群組） |
+| `just verify diagram [--root <repo>] [--realbox] [ITEM...] [-l\|--list] [-h\|--help]` | `./script/verify/diagram.sh`（驗收 4.1：三張 draw.io SVG 與 README 引用；預設讀取本 repo，省略 ITEM 執行全部；`--list` 只列項目；`--realbox` 僅接受相容參數、不啟用任何實機操作） |
+| `just verify realbox [--allow-real-box] [ITEM...] [-l\|--list] [--repo OWNER/NAME] [--issue N] [--comment-tag TAG] [--box NAME] [--image REF] [-h\|--help]` | `./script/verify/realbox.sh`（驗收 5.1–5.4 與 5.2 分步：實機效能、視窗鏈、拒絕既有盒與中斷清理；執行必須帶 `--allow-real-box`，會建立／移除盒、改設定及在 issue 留言；省略 ITEM 依序執行全部、遇錯即停；`--list` 不需授權旗標；repo 預設 ycpss91255/worktool、issue 預設 22；agent 留言須用自己的 `--comment-tag`；box 須符合清單，image 預設 ubuntu:24.04、供 5.3 使用） |
+| `just verify evidence [--allow-realbox] [--list] [ITEM...] [-h\|--help]` | `./script/verify/evidence.sh`（驗收 6.1–6.3：CI、issue 決議與 codex verdict 外部證據；省略 ITEM 執行預設群組全部項目、遇錯即停；`--list` 列項目與群組；`--allow-realbox` 允許 realbox 群組建立／移除盒及改設定） |
+| `just verify help` / `just verify h` | 依序顯示 ui.sh、gate.sh、setup.sh、diagram.sh、realbox.sh、evidence.sh、all.sh 的 `--help` |
 
 `start` 以暫存檔改名原子發布 pid；`wait` 在 pid 尚未發布時視為啟動中，仍受 `--max-seconds` 限制，不會誤報 worker 異常結束。
 

@@ -352,6 +352,43 @@ _listed_names() {
     assert_equal "$(_last_argc)" "1"
 }
 
+@test "#702: structure documents every recipe and alias in all six namespaces" {
+    run awk '
+        FNR == NR {
+            if (!/^\| `just/) next
+            split($0, cells, "|")
+            count = split(cells[2], spans, "`")
+            for (i = 2; i <= count; i += 2) {
+                command = spans[i]
+                sub(/ [\[<].*$/, "", command)
+                documented[command] = 1
+            }
+            next
+        }
+        FNR == 1 {
+            namespace = FILENAME
+            sub(/^.*justfile\./, "", namespace)
+        }
+        /^[a-z][a-z-]*( [^:]*)?:$/ || /^alias [a-z][a-z-]* := / {
+            recipe = $1 == "alias" ? $2 : $1
+            sub(/:$/, "", recipe)
+            command = "just " namespace (recipe == "default" ? "" : " " recipe)
+            if (!(command in documented)) {
+                print "missing command row: " command
+                missing = 1
+            }
+        }
+        END { exit missing }
+    ' "${REPO_ROOT}/doc/structure.md" \
+        "${REPO_ROOT}/script/test/justfile.test" \
+        "${REPO_ROOT}/script/box/justfile.box" \
+        "${REPO_ROOT}/script/verify/justfile.verify" \
+        "${REPO_ROOT}/script/agent/justfile.agent" \
+        "${REPO_ROOT}/.agents/script/worktree/justfile.worktree" \
+        "${REPO_ROOT}/.agents/script/justfile.job"
+    assert_success
+}
+
 @test "#561: structure renders every public just command row inside a table" {
     run awk '
         /^\| 指令 \| 實際執行 \|$/ { header = 1; next }
