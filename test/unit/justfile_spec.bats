@@ -5,7 +5,7 @@
 #   The just layer follows ycpss91255-docker/base (ADR-00000005/10/11):
 #
 #   - zero special cases: the root justfile is action `mod?` lines
-#     (test, box, verify, agent, worktree) plus a `default` that lists them - no other recipe;
+#     (test, box, verify, agent, worktree, job) plus a `default` that lists them - no other recipe;
 #   - action-named namespaces: script/test/justfile.test and
 #     script/box/justfile.box, each with its own `default`, `help` (alias
 #     `h`) and `set working-directory := '../..'`, so every recipe runs at
@@ -125,6 +125,61 @@ _last_argc() {
 # indented line), sorted, space-joined.
 _listed_names() {
     printf '%s\n' "${lines[@]}" | sed -nE 's/^ +([A-Za-z_-]+).*$/\1/p' | sort | tr '\n' ' '
+}
+
+# Check command rows against the public listing: mod? lines + just --dump JSON.
+_command_row_gaps() {
+    local dump modules listing
+    if ! dump=$(just --justfile "${1}/justfile" --dump --dump-format json); then
+        printf 'command-row check: just --dump failed\n' >&2
+        return 1
+    fi
+    if ! modules=$(awk '/^mod\?[[:space:]]+/ { print $2 }' "${1}/justfile"); then
+        printf 'command-row check: module listing failed\n' >&2
+        return 1
+    fi
+    if ! listing=$(jq -er --arg modules "${modules}" '
+        def commands($prefix):
+            ((.recipes | to_entries[] | select(.value.private != true) | .key),
+             (.aliases | keys[])) |
+            $prefix + (if . == "default" then "" else " " + . end);
+        . as $dump |
+        [commands("just"),
+         ($modules | split("\n")[] | select(length > 0) | . as $ns |
+          if ($dump.modules | has($ns)) then
+              $dump.modules[$ns] | commands("just " + $ns)
+          else
+              "module not loaded: " + $ns
+          end)] | join("\n")
+    ' <<<"${dump}"); then
+        printf 'command-row check: JSON listing failed\n' >&2
+        return 1
+    fi
+    awk '
+        FILENAME != "-" {
+            if (!/^\| `just/) next
+            split($0, cells, "|")
+            count = split(cells[2], spans, "`")
+            for (i = 2; i <= count; i += 2) {
+                command = spans[i]
+                sub(/ [\[<].*$/, "", command)
+                documented[command] = 1
+            }
+            next
+        }
+        /^module not loaded: / {
+            print
+            missing = 1
+            next
+        }
+        NF {
+            if (!($0 in documented)) {
+                print "missing command row: " $0
+                missing = 1
+            }
+        }
+        END { exit missing }
+    ' "${1}/doc/structure.md" - <<<"${listing}"
 }
 
 # --- the tool itself ---------------------------------------------------------
@@ -352,41 +407,46 @@ _listed_names() {
     assert_equal "$(_last_argc)" "1"
 }
 
-@test "#702: structure documents every recipe and alias in all six namespaces" {
-    run awk '
-        FNR == NR {
-            if (!/^\| `just/) next
-            split($0, cells, "|")
-            count = split(cells[2], spans, "`")
-            for (i = 2; i <= count; i += 2) {
-                command = spans[i]
-                sub(/ [\[<].*$/, "", command)
-                documented[command] = 1
-            }
-            next
-        }
-        FNR == 1 {
-            namespace = FILENAME
-            sub(/^.*justfile\./, "", namespace)
-        }
-        /^[a-z][a-z-]*( [^:]*)?:$/ || /^alias [a-z][a-z-]* := / {
-            recipe = $1 == "alias" ? $2 : $1
-            sub(/:$/, "", recipe)
-            command = "just " namespace (recipe == "default" ? "" : " " recipe)
-            if (!(command in documented)) {
-                print "missing command row: " command
-                missing = 1
-            }
-        }
-        END { exit missing }
-    ' "${REPO_ROOT}/doc/structure.md" \
-        "${REPO_ROOT}/script/test/justfile.test" \
-        "${REPO_ROOT}/script/box/justfile.box" \
-        "${REPO_ROOT}/script/verify/justfile.verify" \
-        "${REPO_ROOT}/script/agent/justfile.agent" \
-        "${REPO_ROOT}/.agents/script/worktree/justfile.worktree" \
-        "${REPO_ROOT}/.agents/script/justfile.job"
+@test "#702: structure documents every public recipe and alias of every root mod" {
+    run _command_row_gaps "${REPO_ROOT}"
     assert_success
+}
+
+@test "#702: command-table check flags an undocumented recipe with a dependency" {
+    mkdir -p "${COPY}/doc"
+    cp "${REPO_ROOT}/doc/structure.md" "${COPY}/doc/structure.md"
+    cat >>"${COPY}/script/box/justfile.box" <<'EOF'
+
+# Probe documentation coverage for a recipe with a dependency.
+deps-probe: status
+    @true
+EOF
+    run _command_row_gaps "${COPY}"
+    assert_failure
+    assert_line 'missing command row: just box deps-probe'
+}
+
+@test "#702: command-table check flags every recipe of an added root mod" {
+    mkdir -p "${COPY}/doc" "${COPY}/script/extra"
+    cp "${REPO_ROOT}/doc/structure.md" "${COPY}/doc/structure.md"
+    cat >>"${COPY}/justfile" <<'EOF'
+
+# Extra actions for documentation coverage.
+mod? extra 'script/extra/justfile.extra'
+EOF
+    cat >"${COPY}/script/extra/justfile.extra" <<'EOF'
+set working-directory := '../..'
+
+default:
+    @just --justfile script/extra/justfile.extra --list
+
+run *args:
+    @true
+EOF
+    run _command_row_gaps "${COPY}"
+    assert_failure
+    assert_line 'missing command row: just extra'
+    assert_line 'missing command row: just extra run'
 }
 
 @test "#561: structure renders every public just command row inside a table" {
