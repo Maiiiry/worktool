@@ -3785,25 +3785,42 @@ STUB
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == /proc/5556/cwd && -e "${FAKE_STATE_DIR}/cleanup-ready" ]]; then
-    rm -rf "${FAKE_STATE_DIR}/proc/5556" "${FAKE_STATE_DIR}/proc/self"
+    rm -rf "${FAKE_STATE_DIR}/proc/5556"
+    case "${FAKE_EXISTENCE_CASE}" in
+        self-missing) rm -rf "${FAKE_STATE_DIR}/proc/self" ;;
+        lookup-error) ln -s 5556 "${FAKE_STATE_DIR}/proc/5556" ;;
+    esac
     exit 1
 fi
 exec "${FAKE_STATE_DIR}/existence-readlink" "$@"
 STUB
-    _realbox_quiet 5.2.1
-    run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
-    assert_failure 1
-    local directory
-    directory="$(find "$(_backup_dir)" -maxdepth 1 -type d -name 'window.*')"
-    [ -d "${directory}" ]
-    [ -f "${directory}/before" ]
-    [ ! -e "${STATE}/proc/5556" ]
-    [ ! -e "${STATE}/proc/self" ]
-    _assert_52_kept_evidence_stderr "${directory}"
-    mkdir -p "${STATE}/proc/self" "${STATE}/proc/5556"
-    rm -rf -- "${directory}"
-    rm -f "${STATE}/cleanup-ready"
-    _realbox_quiet 5.2.3
+    local existence_case directory
+    for existence_case in self-missing lookup-error; do
+        rm -f "${STATE}/cleanup-ready" "${STATE}/closed"
+        rm -rf "${STATE}/proc/5556"
+        mkdir -p "${STATE}/proc/self" "${STATE}/proc/5556"
+        _realbox_quiet 5.2.1
+        FAKE_EXISTENCE_CASE="${existence_case}" run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+        assert_failure 1
+        directory="$(find "$(_backup_dir)" -maxdepth 1 -type d -name 'window.*')"
+        [ -d "${directory}" ]
+        [ -f "${directory}/before" ]
+        [ ! -e "${STATE}/proc/5556" ]
+        if [[ "${existence_case}" == self-missing ]]; then
+            [ ! -e "${STATE}/proc/self" ]
+            [ ! -L "${STATE}/proc/5556" ]
+        else
+            [ -d "${STATE}/proc/self" ]
+            [ -L "${STATE}/proc/5556" ]
+            assert_equal "$(readlink "${STATE}/proc/5556")" 5556
+        fi
+        _assert_52_kept_evidence_stderr "${directory}"
+        rm -rf "${STATE}/proc/5556"
+        mkdir -p "${STATE}/proc/self" "${STATE}/proc/5556"
+        rm -rf -- "${directory}"
+        rm -f "${STATE}/cleanup-ready"
+        _realbox_quiet 5.2.3
+    done
 }
 
 @test "#700: a deadline-interrupted cleanup scan retains evidence and fails" {

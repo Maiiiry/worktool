@@ -181,6 +181,7 @@ _auto_window_ipc() {
     if [[ "${REALBOX}" == */script/verify/realbox.sh ]]; then
         _private_window_script || return 1
     fi
+    rm -rf "${FAKE_STATE_DIR}/proc/5556"
     mkdir -p "${FAKE_STATE_DIR}/proc/"{self,1,900,4240,4242,4344,5556,6000,800}
     cp "${STUBS}/ps" "${STATE}/auto-ps"
     cp "${STUBS}/readlink" "${STATE}/auto-readlink"

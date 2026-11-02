@@ -867,10 +867,14 @@ _52_process_snapshot() {
     done <<<"${_52_ROWS}"
 }
 
-# Gone only when /proc answers for ourselves but not for the PID; any
-# lookup failure stays undetermined. A reused PID shows as present.
+# Gone only when the PID lookup reports ENOENT and the proc root still
+# answers for ourselves afterwards; any other lookup error stays
+# undetermined. A reused PID shows as present.
 _52_process_gone() {
-    [[ -e "${_52_PROC_ROOT}/self" && ! -e "${_52_PROC_ROOT}/$1" ]]
+    local error
+    error="$(LC_ALL=C; cd -- "${_52_PROC_ROOT}/$1" 2>&1 >/dev/null)" && return 1
+    [[ "${error}" == *': No such file or directory' ]] || return 1
+    [[ -e "${_52_PROC_ROOT}/self" ]]
 }
 
 # Return 0 for owned, 1 for definitely not owned, 2 for undetermined.
