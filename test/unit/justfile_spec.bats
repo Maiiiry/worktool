@@ -160,12 +160,38 @@ _listed_names() {
     assert_line --index 7 --regexp '^[[:space:]]+@just --list$'
 }
 
-@test "#701: design root justfile block matches namespace names, paths and doc comments in order" {
-    local _actual
-    _actual="$(awk '
+# Print each root module with its doc comment in declaration order.
+_root_mod_comments() {
+    awk '
         /^# / { comment = substr($0, 3) }
         /^mod[?] / { print $1, $2, $3, "# " comment }
-    ' "${REPO_ROOT}/justfile")"
+        # Only adjacent doc comments belong to a module; clear after printing it.
+        !/^# / { comment = "" }
+    ' "$1"
+}
+
+@test "#701: root module comments do not carry across blank lines or recipe code" {
+    local _fixture="${BATS_TEST_TMPDIR}/justfile.comments"
+    cat >"${_fixture}" <<'EOF'
+# First doc.
+mod? a 'a/justfile.a'
+
+mod? b 'b/justfile.b'
+default:
+    @just --list
+mod? c 'c/justfile.c'
+EOF
+    run _root_mod_comments "${_fixture}"
+    assert_success
+    assert_equal "${#lines[@]}" 3
+    assert_line --index 0 "mod? a 'a/justfile.a' # First doc."
+    assert_line --index 1 "mod? b 'b/justfile.b' # "
+    assert_line --index 2 "mod? c 'c/justfile.c' # "
+}
+
+@test "#701: design root justfile block matches namespace names, paths and doc comments in order" {
+    local _actual
+    _actual="$(_root_mod_comments "${REPO_ROOT}/justfile")"
     run awk '
         /^```just$/ { block = 1; next }
         block && /^```$/ { exit }
