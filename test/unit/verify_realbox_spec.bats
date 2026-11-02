@@ -4083,7 +4083,20 @@ STUB
 
 @test "#663: a non-fish wrapper gone or uninspectable at the deadline is inconclusive" {
     _auto_window_tools
+    _control_window_clock
     _realbox_quiet 5.2.1
+    cp "${STUBS}/readlink" "${STATE}/deadline-readlink"
+    cat >"${STUBS}/readlink" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == /proc/4240/cwd ]]; then
+    read -r now <"${FAKE_STATE_DIR}/clock"
+    if (( now > 0 )); then
+        printf '9\n' >"${FAKE_STATE_DIR}/clock"
+    fi
+fi
+exec "${FAKE_STATE_DIR}/deadline-readlink" "$@"
+STUB
     cp "${STUBS}/ps" "${STATE}/exited-ps"
     cat >"${STUBS}/ps" <<'STUB'
 #!/usr/bin/env bash
@@ -4096,6 +4109,7 @@ exec "${FAKE_STATE_DIR}/exited-ps" "$@"
 STUB
     local probe_rc
     for probe_rc in 0 1; do
+        printf '0\n' >"${STATE}/clock"
         rm -f "${STATE}/deadline-inspected" "${STATE}/closed"
         FAKE_WINDOW_COMM=sh FAKE_DEADLINE_RC="${probe_rc}" \
             run "${REALBOX}" --allow-real-box 5.2.2 </dev/null
