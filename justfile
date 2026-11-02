@@ -11,20 +11,20 @@
 #
 # The doc comment above each `mod?` is what `just --list` shows for it.
 
-# Self-tests in Docker; just --list test lists all recipes.
+# Self-tests in Docker; just --list test lists its recipes.
 mod? test 'script/test/justfile.test'
-# Dev box lifecycle; see just box help for actions and options.
+# Dev box lifecycle; just --list box lists its recipes.
 mod? box 'script/box/justfile.box'
-# Acceptance checks of doc/acceptance.md; see just verify help for actions and options.
+# Acceptance checks of doc/acceptance.md; just --list verify lists its recipes.
 mod? verify 'script/verify/justfile.verify'
-# Agent launch without GitHub authentication; just agent lists actions.
+# Agent launch without GitHub authentication; just --list agent lists its recipes.
 mod? agent 'script/agent/justfile.agent'
 
-# Cleanup merged linked worktrees (dry-run by default); just worktree lists actions.
+# Cleanup merged linked worktrees (dry-run by default); just --list worktree lists its recipes.
 mod? worktree '.agents/script/worktree/justfile.worktree'
 
 
-# Detached agent jobs and compact results; just job lists actions.
+# Detached agent jobs and compact results; just --list job lists its recipes.
 mod? job '.agents/script/justfile.job'
 
 # Default: list the namespaces.

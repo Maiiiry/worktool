@@ -167,10 +167,11 @@ namespaces, generic tooling, min->max coverage」(零特例、以動作命名、
    各動詞的 `--help` 轉發給腳本。module 以 `set working-directory` 讓 recipe
    一律在 repo 根目錄執行:`script/<ns>/` 與 `.agents/script/` 用 `'../..'`,
    `.agents/script/worktree/` 用 `'../../..'`(`just` 預設以 module 檔所在目錄為 cwd)。
-   `box`、`verify` 的 namespace 層級說明是 `just <ns>`(列出動詞)或
-   `just <ns> help`;`test` 的完整 recipe 清單由 `just --list test` 顯示；`just test help`
-   只顯示 test.sh 的選項。裸 `just test` 會跑 CI 的
-   全部步驟。recipe 層級的 `--help` 由 recipe 原樣轉發給腳本
+   每個 namespace 的完整 recipe 清單一律由 `just --list <ns>` 顯示,
+   root `mod?` 註解即指向它。`box`、`verify`、`agent`、`worktree`、`job` 的裸
+   `just <ns>` 也列出動詞;`test` 例外,裸 `just test` 會跑 CI 的全部步驟。
+   `just <ns> help`(`test`、`box`、`verify`、`job` 有)顯示腳本選項。
+   recipe 層級的 `--help` 由 recipe 原樣轉發給腳本
    (base ADR-00000011 §6:`just <ns> --help` 這種帶橫線的名字不會被 `just` 當成
    recipe,所以 namespace 說明走 `help` recipe)。recipe 上方那一行英文註解就是
    `just --list` 顯示的說明,保持一行。
@@ -178,12 +179,12 @@ namespaces, generic tooling, min->max coverage」(零特例、以動作命名、
 **root `justfile`**(就是這個形狀,沒有別的 recipe;`justfile.ci` 不存在):
 
 ```just
-mod? test 'script/test/justfile.test'                     # Self-tests in Docker; just --list test lists all recipes.
-mod? box  'script/box/justfile.box'                       # Dev box lifecycle; see just box help for actions and options.
-mod? verify 'script/verify/justfile.verify'               # Acceptance checks of doc/acceptance.md; see just verify help for actions and options.
-mod? agent 'script/agent/justfile.agent'                  # Agent launch without GitHub authentication; just agent lists actions.
-mod? worktree '.agents/script/worktree/justfile.worktree' # Cleanup merged linked worktrees (dry-run by default); just worktree lists actions.
-mod? job '.agents/script/justfile.job'                    # Detached agent jobs and compact results; just job lists actions.
+mod? test 'script/test/justfile.test'                     # Self-tests in Docker; just --list test lists its recipes.
+mod? box  'script/box/justfile.box'                       # Dev box lifecycle; just --list box lists its recipes.
+mod? verify 'script/verify/justfile.verify'               # Acceptance checks of doc/acceptance.md; just --list verify lists its recipes.
+mod? agent 'script/agent/justfile.agent'                  # Agent launch without GitHub authentication; just --list agent lists its recipes.
+mod? worktree '.agents/script/worktree/justfile.worktree' # Cleanup merged linked worktrees (dry-run by default); just --list worktree lists its recipes.
+mod? job '.agents/script/justfile.job'                    # Detached agent jobs and compact results; just --list job lists its recipes.
 
 # Default: list the namespaces.
 default:
