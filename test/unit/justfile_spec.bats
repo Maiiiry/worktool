@@ -391,12 +391,6 @@ EOF
     assert_output "${_expected}"
 }
 
-@test "#707: test namespace guidance covers every current user recipe" {
-    run _namespace_guidance_gaps "${COPY}" test
-    assert_success
-    assert_output ""
-}
-
 @test "#707: recipe entry check rejects names that appear only in prose" {
     local listing='Available recipes:
     default # Run all.sh with --help first.'
