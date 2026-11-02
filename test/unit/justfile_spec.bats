@@ -304,7 +304,7 @@ _assert_namespace_recipe_guidance() {
     local namespace="$1" description recipes recipe
     _just --list
     assert_success
-    description="$(printf '%s\n' "${lines[@]}" | sed -nE "s/^ +${namespace} \\.\\.\\. +# //p")"
+    description="$(printf '%s\n' "$output" | sed -nE "s/^ +${namespace} \\.\\.\\. +# //p")"
     _just --list "$namespace"
     assert_success
     recipes="$(_listed_names)"
