@@ -259,7 +259,8 @@ as the task runner」),M1 建骨架時直接沿用了 `justfile` + `justfile.ci`
 **規則(往後每個 milestone)**:
 
 1. 一個新的使用者動作 = **對的 namespace 裡的一個 recipe**(或一個新的 `mod?`
-   namespace,附自己的 `justfile.<ns>` 與 `script/<ns>/`)+ **一個 justfile spec
+   namespace,使用者介面的 module 檔為 `script/<ns>/justfile.<ns>`,agent 維運介面則住在
+   `.agents/script/`,兩者的 module 檔皆與轉發的腳本放在一起)+ **一個 justfile spec
    案例**(`test/unit/justfile_spec.bats`:recipe 存在、`*args` 原樣抵達腳本、壞參數
    由腳本而非 justfile 拒絕)+ **腳本自己擁有 `--help`**(usage、選項驗證、錯誤
    訊息)。三者缺一不可。例如 M3 的 `enter` / `rm` 就是 `box` namespace 的兩個
