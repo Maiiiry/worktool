@@ -735,61 +735,40 @@ STUB
     [ ! -s "${MATRIX_STATE}/boxes" ]
 }
 
-_run_cleanup_fault() {
-    cat >"${MATRIX_STATE}/cleanup-harness" <<'STUB'
-#!/usr/bin/env bash
-set -euo pipefail
-        source "${LIB_DIR}/log.sh"
-        source "${LIB_DIR}/realbox_interrupt.sh"
-        _54_W="${MATRIX_STATE}/cleanup-evidence"
-        mkdir -p "${_54_W}"
-        printf "capture\n" >"${_54_W}/capture"
-        _54_PID="${BASHPID}"
-        printf "%s\n" "${_54_PID}" >"${MATRIX_STATE}/expected-pid"
-        kill() { :; }
-        # Inject only the wait and stop outcomes; cleanup remains real.
-        reap_rc="$1" stop_rc="$2"
-        _54_reap() { return "${reap_rc}"; }
-        _54_stop_session() { return "${stop_rc}"; }
-        rc=0
-        _54_cleanup || rc=$?
-        printf "%s\n" "${_54_PID}" >"${MATRIX_STATE}/remaining-pid"
-        exit "${rc}"
+# Exercise EXIT cleanup while the public supervisor still owns a live cell.
+_matrix_cleanup_fault() {
+    _matrix_child_stub
+    sed -i "s/^trap .* TERM$/trap '' TERM/" "${MATRIX_STATE}/child"
+    sed -i '/^touch /i\    printf "resident-ready\\n" >>"${TMPDIR}/capture"' "${MATRIX_STATE}/child"
+    # The process-group adapter cannot deliver either TERM or emergency KILL.
+    cat >>"${MATRIX_STATE}/repo/lib/verify_run.sh" <<'STUB'
+verify_stop_group() { return 1; }
 STUB
-    run --separate-stderr setsid bash "${MATRIX_STATE}/cleanup-harness" "$@"
 }
 
-@test "#696: cleanup wait timeout keeps evidence and PID with recovery diagnostics" {
-    _run_cleanup_fault 124 0
-    assert_failure 1
-    [ -f "${MATRIX_STATE}/cleanup-evidence/capture" ]
-    cmp "${MATRIX_STATE}/expected-pid" "${MATRIX_STATE}/remaining-pid"
-    cmp "${MATRIX_STATE}/expected-pid" "${MATRIX_STATE}/cleanup-evidence/cleanup.pid"
-    [[ "${stderr}" == *"kept evidence=${MATRIX_STATE}/cleanup-evidence"* ]]
-    [[ "${stderr}" == *"pid-record=${MATRIX_STATE}/cleanup-evidence/cleanup.pid"* ]]
-    [[ "${stderr}" == *"surviving process: pid="* ]]
+_matrix_assert_recovery() {
+    local pid evidence
+    read -r pid <"${MATRIX_STATE}/child.pid"
+    evidence=("${TMPDIR}"/wt-m3-54.*/cleanup.pid)
+    [ -f "${evidence[0]}" ]
+    [ "$(cat "${evidence[0]}")" = "${pid}" ]
+    evidence="${evidence[0]%/cleanup.pid}"
+    [ -f "${evidence}/assemble-INT/comments-before" ]
+    [ "$(cat "${evidence}/assemble-INT/capture")" = resident-ready ]
+    kill -0 "${pid}"
+    [[ "${stderr}" == *"kept evidence=${evidence};"* ]]
+    [[ "${stderr}" == *"pid-record=${evidence}/cleanup.pid;"* ]]
+    [[ "${stderr}" == *"surviving process: pid=${pid} "* ]]
     [[ "${stderr}" == *"manual recovery:"* ]]
-    assert_output ''
+    assert_line 'exit-signal=none'
+    assert_line 'rc=1'
 }
 
-@test "#696: cleanup stop failure keeps evidence and PID with recovery diagnostics" {
-    _run_cleanup_fault 0 1
-    assert_failure 1
-    [ -f "${MATRIX_STATE}/cleanup-evidence/capture" ]
-    cmp "${MATRIX_STATE}/expected-pid" "${MATRIX_STATE}/remaining-pid"
-    cmp "${MATRIX_STATE}/expected-pid" "${MATRIX_STATE}/cleanup-evidence/cleanup.pid"
-    [[ "${stderr}" == *"kept evidence=${MATRIX_STATE}/cleanup-evidence"* ]]
-    [[ "${stderr}" == *"pid-record=${MATRIX_STATE}/cleanup-evidence/cleanup.pid"* ]]
-    [[ "${stderr}" == *"surviving process: pid="* ]]
-    [[ "${stderr}" == *"manual recovery:"* ]]
-    assert_output ''
-}
-
-@test "#696: normal cleanup removes evidence and clears PID with success" {
-    _run_cleanup_fault 0 0
+@test "#696: interrupted supervisor preserves recovery evidence for a live timed-out child" {
+    _matrix_cleanup_fault
+    run --separate-stderr node "${BATS_TEST_DIRNAME}/fixture/verify_signal.js" TERM bash \
+        "${REALBOX}" --allow-real-box 5.4
     assert_success
-    [ ! -e "${MATRIX_STATE}/cleanup-evidence" ]
-    [ "$(cat "${MATRIX_STATE}/remaining-pid")" = '' ]
-    [ -z "${stderr}" ]
-    assert_output ''
+    _matrix_assert_recovery
+    [[ "${stderr}" == *'interrupt cleanup: child reap wait deadline exceeded'* ]]
 }
