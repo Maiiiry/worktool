@@ -50,18 +50,19 @@
 #
 # This is a library: it defines functions and must be sourced, not executed.
 
-# The config files `just box setup` can write, in report order. EVERY file
-# the product may write has to be in here: item 5.2 applies the managed
-# blocks to the maintainer's REAL configuration, and step 3's only way back
-# is this backup. `~/.tmux.conf` is written whenever the stored tmux
-# decision is `host` (script/box/setup.sh, _apply_ghostty) - the case a
-# ghostty-plus-worktool backup set left with nothing to restore from.
+# Default names for standalone library callers, including the library specs.
+# These retain the historical tmux-conf backup/restore case; current setup
+# has no host tmux decision and never reads or writes ~/.tmux.conf.
+# Acceptance 5.2 sources script/verify/config_backup_paths.sh, which owns
+# its names and path mappings and overrides these defaults: ghostty,
+# ghostty-modern, worktool, distrobox-conf, init-log. The first four cover
+# setup's writes; init-log also covers the terminal's first box entry.
 CFGBK_NAMES=(ghostty worktool tmux-conf)
 
-# The subset whose CONTENT is the USER's own, where `just box setup` only
-# rents a managed block. The worktool state file is not one of them: the
-# product writes the whole of it, so "the user's content survived" is not a
-# claim anyone can make about it.
+# The default subset checked for user content outside managed blocks.
+# Acceptance overrides it alongside CFGBK_NAMES. The worktool state file
+# is not one of them: the product writes the whole of it, so "the user's
+# content survived" is not a claim anyone can make about it.
 CFGBK_USER_NAMES=(ghostty tmux-conf)
 
 # Acceptance can opt individual files into absent parent-chain tracking.
@@ -98,9 +99,9 @@ cfgbk_paths() {
 # The two shapes are deliberately kept apart. A config under
 # $XDG_CONFIG_HOME lives in a directory worktool itself creates, so an
 # `absent-dir` backup has a directory to remove again on restore;
-# `~/.tmux.conf` lives in $HOME, which is never ours to create or to remove,
-# so it has no directory of its own and its absent state is always
-# `absent-file`.
+# the historical `~/.tmux.conf` case lives in $HOME, which is never ours to
+# create or to remove, so it has no directory of its own and its absent
+# state is always `absent-file`. Acceptance overrides these path mappings.
 
 cfgbk_file_of() {
     case "$1" in
