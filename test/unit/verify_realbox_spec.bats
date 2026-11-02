@@ -3691,6 +3691,25 @@ STUB
     [ -f "$(_backup_dir)/manifest" ]
 }
 
+@test "#700: cleanup cwd probe failure retains evidence and fails with manual guidance" {
+    _cleanup_cwd_tools
+    local mode directory
+    for mode in failure timeout; do
+        rm -f "${STATE}/cleanup-ready" "${STATE}/closed"
+        _realbox_quiet 5.2.1
+        FAKE_CLEANUP_CWD="${mode}" run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+        assert_failure 1
+        directory="$(cat "${STATE}/window-directory")"
+        [ -f "${directory}/before" ]
+        [[ "${stderr}" == *"kept evidence=${directory}"* ]]
+        [[ "${stderr}" == *'manual check:'* ]]
+        [ ! -e "${STATE}/closed" ]
+        rm -f "${STATE}/window-directory" "${STATE}/cleanup-ready"
+        rm -rf -- "${directory}"
+        _realbox_quiet 5.2.3
+    done
+}
+
 @test "#663: failed cleanup inventories preserve owned window evidence" {
     _auto_window_tools
     cp "${STUBS}/ps" "${STATE}/cleanup-ps"

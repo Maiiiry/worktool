@@ -237,3 +237,24 @@ STUB
     chmod +x "${STUBS}/"{ps,readlink}
 }
 
+
+_cleanup_cwd_tools() {
+    _auto_window_tools
+    cp "${STUBS}/readlink" "${STATE}/cleanup-readlink"
+    cat >"${STUBS}/readlink" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+    /proc/4242/ns/mnt) touch "${FAKE_STATE_DIR}/cleanup-ready" ;;
+    /proc/4240/cwd)
+        if [[ -e "${FAKE_STATE_DIR}/cleanup-ready" ]]; then
+            case "${FAKE_CLEANUP_CWD:-normal}" in
+                failure) exit 1 ;;
+                timeout) exit 137 ;;
+            esac
+        fi ;;
+esac
+exec "${FAKE_STATE_DIR}/cleanup-readlink" "$@"
+STUB
+}
+

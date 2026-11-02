@@ -864,6 +864,7 @@ _52_process_snapshot() {
     done <<<"${_52_ROWS}"
 }
 
+# Return 0 for owned, 1 for definitely not owned, 2 for undetermined.
 _52_window_root() {
     local pid="$1" parent cwd depth
     for ((depth=0; depth<64; depth++)); do
@@ -872,7 +873,7 @@ _52_window_root() {
         parent="${_52_PARENTS[${pid}]:-0}"
         [[ "${parent}" =~ ^[1-9][0-9]*$ && "${parent}" != "${pid}" ]] || return 1
         if [[ "${_52_COMMS[${parent}]:-}" == ghostty ]]; then
-            cwd="$(timeout -s KILL 1 readlink "/proc/${pid}/cwd" 2>/dev/null)" || return 1
+            cwd="$(timeout -s KILL 1 readlink "/proc/${pid}/cwd" 2>/dev/null)" || return 2
             if [[ "${cwd}" == "${_52_WINDOW_DIR}" ]] && ! grep -qE "^[[:space:]]*${pid}[[:space:]]" "${_52_WINDOW_DIR}/before"; then
                 printf '%s\n' "${pid}"
                 return 0
@@ -1009,7 +1010,7 @@ _52_stop_window() {
 }
 
 _52_sweep_window() {
-    local _52_ROWS pid parent comm root group pgid sid rc=0 found=0
+    local _52_ROWS pid parent comm root group pgid sid probe_rc rc=0 found=0
     local -A _52_PARENTS=() _52_COMMS=()
     _52_process_snapshot || {
         guard_fail "cannot inventory owned window; keeping ownership evidence"
@@ -1018,7 +1019,12 @@ _52_sweep_window() {
     while read -r pid parent comm; do
         (( SECONDS < _52_DEADLINE )) || break
         [[ "${parent}" =~ ^[1-9][0-9]*$ && "${_52_COMMS[${parent}]:-}" == ghostty ]] || continue
-        root="$(_52_window_root "${pid}")" || continue
+        probe_rc=0
+        root="$(_52_window_root "${pid}")" || probe_rc=$?
+        if [[ "${probe_rc}" -ne 0 ]]; then
+            [[ "${probe_rc}" -eq 1 ]] || rc=1
+            continue
+        fi
         [[ "${root}" == "${pid}" ]] || continue
         found=1
         (( SECONDS < _52_DEADLINE )) || return 1
@@ -1043,12 +1049,17 @@ _52_close_window() {
     while (( SECONDS < retry_until )); do
         rc=0
         _52_sweep_window || rc=$?
-        [[ "${rc}" -ne 1 ]] || return 1
+        [[ "${rc}" -ne 1 ]] || { _52_keep_window; return 1; }
         [[ "${rc}" -ne 0 && "${_52_WINDOW_PENDING:-0}" -eq 1 ]] || break
         sleep 0.1 || return 1
     done
     rm -rf -- "${_52_WINDOW_DIR}" || return 1
     _52_WINDOW_DIR=''
+}
+
+_52_keep_window() {
+    log_warn "cannot safely close owned window; keeping ownership evidence; kept evidence=${_52_WINDOW_DIR}"
+    log_warn "manual check: inspect ${_52_WINDOW_DIR}/before and process cwd/ancestry; confirm the owned window is closed, save evidence, then remove ${_52_WINDOW_DIR} and retry 5.2.3"
 }
 
 _52_auto_window() {
