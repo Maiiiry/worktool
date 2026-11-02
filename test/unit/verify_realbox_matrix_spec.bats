@@ -746,23 +746,24 @@ _matrix_cleanup_fault() {
 }
 
 _matrix_assert_recovery() {
-    local pid evidence survivor
+    local pid evidence survivor diagnostics="$1"
+    local -a records
     read -r pid <"${MATRIX_STATE}/child.pid"
     survivor="${pid}"
     if [[ -f "${MATRIX_STATE}/resident.pid" ]]; then
         read -r survivor <"${MATRIX_STATE}/resident.pid"
     fi
-    evidence=("${TMPDIR}"/wt-m3-54.*/cleanup.pid)
-    [ -f "${evidence[0]}" ]
-    [ "$(cat "${evidence[0]}")" = "${pid}" ]
-    evidence="${evidence[0]%/cleanup.pid}"
+    records=("${TMPDIR}"/wt-m3-54.*/cleanup.pid)
+    [ -f "${records[0]}" ]
+    [ "$(cat "${records[0]}")" = "${pid}" ]
+    evidence="${records[0]%/cleanup.pid}"
     [ -f "${evidence}/assemble-INT/comments-before" ]
     [ "$(cat "${evidence}/assemble-INT/capture")" = resident-ready ]
     kill -0 "${survivor}"
-    [[ "${stderr}" == *"kept evidence=${evidence};"* ]]
-    [[ "${stderr}" == *"pid-record=${evidence}/cleanup.pid;"* ]]
-    [[ "${stderr}" == *"surviving process: pid=${survivor} "* ]]
-    [[ "${stderr}" == *"manual recovery:"* ]]
+    [[ "${diagnostics}" == *"kept evidence=${evidence};"* ]]
+    [[ "${diagnostics}" == *"pid-record=${evidence}/cleanup.pid;"* ]]
+    [[ "${diagnostics}" == *"surviving process: pid=${survivor} "* ]]
+    [[ "${diagnostics}" == *"manual recovery:"* ]]
     assert_line 'exit-signal=none'
     assert_line 'rc=1'
 }
@@ -772,7 +773,7 @@ _matrix_assert_recovery() {
     run --separate-stderr node "${BATS_TEST_DIRNAME}/fixture/verify_signal.js" TERM bash \
         "${REALBOX}" --allow-real-box 5.4
     assert_success
-    _matrix_assert_recovery
+    _matrix_assert_recovery "${stderr}"
     [[ "${stderr}" == *'interrupt cleanup: child reap wait deadline exceeded'* ]]
 }
 
@@ -797,6 +798,6 @@ STUB
     run --separate-stderr node "${BATS_TEST_DIRNAME}/fixture/verify_signal.js" TERM bash \
         "${REALBOX}" --allow-real-box 5.4
     assert_success
-    _matrix_assert_recovery
+    _matrix_assert_recovery "${stderr}"
     [[ "${stderr}" != *'child reap wait deadline exceeded'* ]]
 }
