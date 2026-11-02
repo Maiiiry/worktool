@@ -179,9 +179,9 @@ namespaces, generic tooling, min->max coverage」(零特例、以動作命名、
 mod? test 'script/test/justfile.test'   # Self-test: lint + bats tiers in Docker (just test [build|lint|unit|matrix|integration|system|system-real|acceptance|selfcheck])
 mod? box  'script/box/justfile.box'     # Dev box lifecycle: just box assemble [--dry-run] [--file X] | bench [--runs N] [--max-ms N] [--json] | setup [--auto-enter yes|no ...] | status | enter [--box N] [-- CMD]
 mod? verify 'script/verify/justfile.verify' # Acceptance checks of doc/acceptance.md: just verify all | ui | gate | setup | diagram | realbox | evidence [ITEM]
-mod? agent 'script/agent/justfile.agent' # Agent launch without GitHub authentication: just agent codex -- exec <prompt>
-mod? worktree '.agents/script/worktree/justfile.worktree' # Cleanup merged clean linked worktrees: just worktree prune-merged [--apply] (dry-run by default)
-mod? job '.agents/script/justfile.job' # Detached agent jobs and compact results: just job start | status | wait
+mod? agent 'script/agent/justfile.agent' # Agent launch without GitHub authentication (headless fallback).
+mod? worktree '.agents/script/worktree/justfile.worktree' # Cleanup merged linked worktrees (dry-run by default).
+mod? job '.agents/script/justfile.job' # Detached agent jobs and compact results.
 
 # Default: list the namespaces.
 default:
