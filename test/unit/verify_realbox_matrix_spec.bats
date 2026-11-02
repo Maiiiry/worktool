@@ -734,3 +734,36 @@ STUB
     refute_output --partial 'signal-phase=assemble'
     [ ! -s "${MATRIX_STATE}/boxes" ]
 }
+
+_run_cleanup_fault() {
+    run --separate-stderr setsid bash -c '
+        source "${LIB_DIR}/log.sh"
+        source "${LIB_DIR}/realbox_interrupt.sh"
+        _54_W="${MATRIX_STATE}/cleanup-evidence"
+        mkdir -p "${_54_W}"
+        printf "capture\n" >"${_54_W}/capture"
+        _54_PID="${BASHPID}"
+        printf "%s\n" "${_54_PID}" >"${MATRIX_STATE}/expected-pid"
+        kill() { :; }
+        # Inject only the wait and stop outcomes; cleanup remains real.
+        eval "_54_reap() { return $1; }"
+        eval "_54_stop_session() { return $2; }"
+        rc=0
+        _54_cleanup || rc=$?
+        printf "%s\n" "${_54_PID}" >"${MATRIX_STATE}/remaining-pid"
+        exit "${rc}"
+    ' bash "$@"
+}
+
+@test "#696: cleanup wait timeout keeps evidence and PID with recovery diagnostics" {
+    _run_cleanup_fault 124 0
+    assert_failure 1
+    [ -f "${MATRIX_STATE}/cleanup-evidence/capture" ]
+    cmp "${MATRIX_STATE}/expected-pid" "${MATRIX_STATE}/remaining-pid"
+    cmp "${MATRIX_STATE}/expected-pid" "${MATRIX_STATE}/cleanup-evidence/cleanup.pid"
+    [[ "${stderr}" == *"kept evidence=${MATRIX_STATE}/cleanup-evidence"* ]]
+    [[ "${stderr}" == *"pid-record=${MATRIX_STATE}/cleanup-evidence/cleanup.pid"* ]]
+    [[ "${stderr}" == *"surviving process: pid="* ]]
+    [[ "${stderr}" == *"manual recovery:"* ]]
+    assert_output ''
+}
