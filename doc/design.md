@@ -267,7 +267,7 @@ as the task runner」),M1 建骨架時直接沿用了 `justfile` + `justfile.ci`
    `.agents/script/`,兩者的 module 檔皆與轉發的腳本放在一起)+ **一個 justfile spec
    案例**(`test/unit/justfile_spec.bats`:recipe 存在、`*args` 原樣抵達腳本、壞參數
    由腳本而非 justfile 拒絕)+ **腳本自己擁有 `--help`**(usage、選項驗證、錯誤
-   訊息)。三者缺一不可。例如 M3 的 `enter` / `rm` 就是 `box` namespace 的兩個
+   訊息)。三者缺一不可。例如 M3 的 `setup`、`status`、`enter` 就是 `box` namespace 的
    recipe 加各自的腳本。
 2. 不新增頂層 recipe;不在 justfile 裡驗證參數或印 usage;namespace 以動作命名。
 3. CI(`.github/workflows/ci.yml`)跑的與使用者打的是同一套指令:job 名稱不變
