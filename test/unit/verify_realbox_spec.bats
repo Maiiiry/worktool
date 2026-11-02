@@ -3710,6 +3710,20 @@ STUB
     done
 }
 
+@test "#700: a deadline-interrupted cleanup scan retains evidence and fails" {
+    _cleanup_cwd_tools
+    _control_window_clock
+    _realbox_quiet 5.2.1
+    FAKE_CLEANUP_CWD=deadline run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+    assert_failure 1
+    local directory
+    directory="$(cat "${STATE}/window-directory")"
+    [ -f "${directory}/before" ]
+    [[ "${stderr}" == *"kept evidence=${directory}"* ]]
+    [[ "${stderr}" == *'manual check:'* ]]
+    [ ! -e "${STATE}/closed" ]
+}
+
 @test "#663: failed cleanup inventories preserve owned window evidence" {
     _auto_window_tools
     cp "${STUBS}/ps" "${STATE}/cleanup-ps"

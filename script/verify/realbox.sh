@@ -857,7 +857,7 @@ _52_process_snapshot() {
     _52_ROWS="$(timeout -s KILL 1 ps -e -o pid=,ppid=,comm=)" || return 1
     _52_PARENTS=() _52_COMMS=()
     while read -r pid parent comm; do
-        (( SECONDS < ${_52_DEADLINE:-SECONDS+1} )) || return 1
+        (( SECONDS < ${_52_DEADLINE:-SECONDS+1} )) || return 2
         [[ "${pid}" =~ ^[1-9][0-9]*$ && "${parent}" =~ ^[0-9]+$ ]] || continue
         _52_PARENTS[${pid}]="${parent}"
         _52_COMMS[${pid}]="${comm}"
@@ -874,6 +874,7 @@ _52_window_root() {
         [[ "${parent}" =~ ^[1-9][0-9]*$ && "${parent}" != "${pid}" ]] || return 1
         if [[ "${_52_COMMS[${parent}]:-}" == ghostty ]]; then
             cwd="$(timeout -s KILL 1 readlink "/proc/${pid}/cwd" 2>/dev/null)" || return 2
+            (( SECONDS < ${_52_DEADLINE:-SECONDS+1} )) || return 2
             if [[ "${cwd}" == "${_52_WINDOW_DIR}" ]] && ! grep -qE "^[[:space:]]*${pid}[[:space:]]" "${_52_WINDOW_DIR}/before"; then
                 printf '%s\n' "${pid}"
                 return 0
@@ -1017,7 +1018,7 @@ _52_sweep_window() {
         return 1
     }
     while read -r pid parent comm; do
-        (( SECONDS < _52_DEADLINE )) || break
+        (( SECONDS < _52_DEADLINE )) || return 1
         [[ "${parent}" =~ ^[1-9][0-9]*$ && "${_52_COMMS[${parent}]:-}" == ghostty ]] || continue
         probe_rc=0
         root="$(_52_window_root "${pid}")" || probe_rc=$?
@@ -1037,6 +1038,7 @@ _52_sweep_window() {
             rc=1
         fi
     done <<<"${_52_ROWS}"
+    (( SECONDS < _52_DEADLINE )) || return 1
     [[ "${rc}" -eq 0 ]] || return 1
     [[ "${found}" -eq 1 ]] || return 2
 }
@@ -1051,8 +1053,9 @@ _52_close_window() {
         _52_sweep_window || rc=$?
         [[ "${rc}" -ne 1 ]] || { _52_keep_window; return 1; }
         [[ "${rc}" -ne 0 && "${_52_WINDOW_PENDING:-0}" -eq 1 ]] || break
-        sleep 0.1 || return 1
+        sleep 0.1 || { _52_keep_window; return 1; }
     done
+    (( SECONDS < _52_DEADLINE )) || { _52_keep_window; return 1; }
     rm -rf -- "${_52_WINDOW_DIR}" || return 1
     _52_WINDOW_DIR=''
 }

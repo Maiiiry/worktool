@@ -251,6 +251,11 @@ case "$*" in
             case "${FAKE_CLEANUP_CWD:-normal}" in
                 failure) exit 1 ;;
                 timeout) exit 137 ;;
+                deadline)
+                    read -r now <"${FAKE_STATE_DIR}/clock"
+                    printf '%s\n' "$((now + 4))" >"${FAKE_STATE_DIR}/clock"
+                    printf '/unrelated/window\n'
+                    exit 0 ;;
             esac
         fi ;;
 esac
