@@ -160,6 +160,18 @@ _listed_names() {
     assert_line --index 7 --regexp '^[[:space:]]+@just --list$'
 }
 
+@test "#701: design root justfile block lists the actual namespace names and paths in order" {
+    local _actual
+    _actual="$(awk '/^mod[?] / { print $1, $2, $3 }' "${REPO_ROOT}/justfile")"
+    run awk '
+        /^```just$/ { block = 1; next }
+        block && /^```$/ { exit }
+        block && /^mod[?] / { print $1, $2, $3 }
+    ' "${REPO_ROOT}/doc/design.md"
+    assert_success
+    assert_output "${_actual}"
+}
+
 @test "the namespace justfiles live next to their scripts and run from the repo root" {
     local _m
     for _m in script/test/justfile.test script/box/justfile.box script/verify/justfile.verify .agents/script/justfile.job; do
