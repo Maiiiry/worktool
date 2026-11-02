@@ -3738,6 +3738,59 @@ STUB
     [ ! -e "${STATE}/closed" ]
 }
 
+@test "#700: the cleanup deadline passing between sweep rows without an undetermined probe keeps evidence" {
+    _cleanup_cwd_tools
+    _control_window_clock
+    cp "${STUBS}/ps" "${STATE}/deadline-ps"
+    cp "${STUBS}/readlink" "${STATE}/deadline-readlink"
+    cat >"${STUBS}/ps" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == '-e -o pid=,ppid=,comm=' && -e "${FAKE_STATE_DIR}/cleanup-ready" ]]; then
+    printf '1 0 init\n900 1 ghostty\n'
+    if [[ -e "${FAKE_STATE_DIR}/window-directory" ]]; then
+        printf '4240 900 distrobox\n'
+    fi
+    printf '5556 900 fish\n'
+    if [[ "${FAKE_SWEEP_ROW_ORDER}" == middle ]]; then
+        printf '7777 1 conmon\n'
+    fi
+    exit 0
+fi
+exec "${FAKE_STATE_DIR}/deadline-ps" "$@"
+STUB
+    cat >"${STUBS}/readlink" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == /proc/5556/cwd && -e "${FAKE_STATE_DIR}/cleanup-ready"
+    && -e "${FAKE_STATE_DIR}/closed" ]]; then
+    mkdir -p "${FAKE_STATE_DIR}/gone"
+    touch "${FAKE_STATE_DIR}/gone/5556"
+    read -r now <"${FAKE_STATE_DIR}/clock"
+    printf '%s\n' "$((now + 5))" >"${FAKE_STATE_DIR}/clock"
+    exit 1
+fi
+exec "${FAKE_STATE_DIR}/deadline-readlink" "$@"
+STUB
+    local row_order directory
+    for row_order in last middle; do
+        rm -f "${STATE}/cleanup-ready" "${STATE}/gone/5556" "${STATE}/closed"
+        _realbox_quiet 5.2.1
+        FAKE_SWEEP_ROW_ORDER="${row_order}" run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+        assert_failure 1
+        directory="$(find "$(_backup_dir)" -maxdepth 1 -type d -name 'window.*')"
+        [ -d "${directory}" ]
+        [ -f "${directory}/before" ]
+        [[ "${stderr}" == *"kept evidence=${directory}"* ]]
+        [[ "${stderr}" != *'window ownership undetermined'* ]]
+        [ -e "${STATE}/gone/5556" ]
+        assert_equal "$(cat "${STATE}/closed")" '-HUP -- -4240'
+        rm -rf -- "${directory}"
+        rm -f "${STATE}/cleanup-ready"
+        _realbox_quiet 5.2.3
+    done
+}
+
 @test "#700: an undetermined ownership probe cannot become successful apply or restore evidence" {
     _auto_window_tools
     _control_window_clock
