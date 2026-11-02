@@ -4081,7 +4081,7 @@ STUB
     [ -f "$(_backup_dir)/manifest" ]
 }
 
-@test "#663: a non-fish wrapper gone or uninspectable at the deadline is inconclusive" {
+@test "#700: apply ownership probing across the deadline is undetermined before any final wrapper probe" {
     _auto_window_tools
     _control_window_clock
     _realbox_quiet 5.2.1
@@ -4091,8 +4091,9 @@ STUB
 set -euo pipefail
 if [[ "$*" == /proc/4240/cwd ]]; then
     read -r now <"${FAKE_STATE_DIR}/clock"
-    if (( now > 0 )); then
+    if (( now > 0 && now < 9 )); then
         printf '9\n' >"${FAKE_STATE_DIR}/clock"
+        exit "${FAKE_DEADLINE_RC}"
     fi
 fi
 exec "${FAKE_STATE_DIR}/deadline-readlink" "$@"
@@ -4103,18 +4104,21 @@ STUB
 set -euo pipefail
 if [[ "$*" == '-p 4242 -o comm=' ]]; then
     touch "${FAKE_STATE_DIR}/deadline-inspected"
-    exit "${FAKE_DEADLINE_RC:-0}"
+    printf 'sh\n'
+    exit 0
 fi
 exec "${FAKE_STATE_DIR}/exited-ps" "$@"
 STUB
     local probe_rc
-    for probe_rc in 0 1; do
+    for probe_rc in 0 137; do
         printf '0\n' >"${STATE}/clock"
         rm -f "${STATE}/deadline-inspected" "${STATE}/closed"
         FAKE_WINDOW_COMM=sh FAKE_DEADLINE_RC="${probe_rc}" \
             run "${REALBOX}" --allow-real-box 5.2.2 </dev/null
         assert_failure 3
-        [ -e "${STATE}/deadline-inspected" ]
+        assert_output --partial 'window ownership undetermined; acceptance inconclusive'
+        [ ! -e "${STATE}/deadline-inspected" ]
+        refute_output --partial 'Ghostty new shell timed out'
         refute_output --partial 'is not fish'
         [ -f "$(_backup_dir)/manifest" ]
         assert_equal "$(cat "${STATE}/closed")" '-HUP -- -4240'

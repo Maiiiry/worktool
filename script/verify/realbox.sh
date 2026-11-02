@@ -925,9 +925,8 @@ _52_find_window() {
         if [[ "${mode}" == apply ]]; then
             apply_root="$(_52_apply_window_root)" || {
                 rc=$?
-                # Deadline exhaustion still needs the reserved final probe.
-                (( SECONDS < _52_DEADLINE )) || break
                 [[ "${rc}" -ne 2 ]] || { _52_ownership_unknown; return 3; }
+                (( SECONDS < _52_DEADLINE )) || break
                 sleep 0.1 || return 3
                 continue
             }
