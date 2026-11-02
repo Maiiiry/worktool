@@ -11,7 +11,7 @@
 #
 # The doc comment above each `mod?` is what `just --list` shows for it.
 
-# Self-tests in Docker; see just test help for actions and options.
+# Self-tests in Docker; just --list test lists all recipes.
 mod? test 'script/test/justfile.test'
 # Dev box lifecycle; see just box help for actions and options.
 mod? box 'script/box/justfile.box'

@@ -321,6 +321,7 @@ verify 例外只適用於可直接解析的呼叫。無受限動作的日常指�
 | 指令 | 實際執行 |
 |------|----------|
 | `just` | `just --list`(列出命名空間) |
+| `just --list test` | 列出 test 命名空間的全部 recipe；`just test help` 只顯示 test.sh 選項 |
 | `just job` | 列出共用 job 動作 |
 | `just job start <name> -- <cmd...>` | 脫離行程啟動工作；pid、log、rc 在 `.agents/state/job/<name>/`，名稱不得覆寫 |
 | `just job wait <name> [--max-seconds N]` | 單次阻塞收集結果與尾段／失敗段落；成功 0、失敗 1、仍執行 124、參數錯誤 2 |

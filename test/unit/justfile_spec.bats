@@ -299,11 +299,37 @@ EOF
     assert_output "${_expected}"
 }
 
+# Follow the command advertised by the root listing, without evaluating prose.
+_assert_namespace_recipe_guidance() {
+    local namespace="$1" description recipes recipe
+    _just --list
+    assert_success
+    description="$(printf '%s\n' "${lines[@]}" | sed -nE "s/^ +${namespace} \\.\\.\\. +# //p")"
+    _just --list "$namespace"
+    assert_success
+    recipes="$(_listed_names)"
+    case "$description" in
+        *"just --list ${namespace}"*) _just --list "$namespace" ;;
+        *"just ${namespace} help"*) _just "$namespace" help ;;
+        *"just ${namespace} lists"*) _just "$namespace" ;;
+        *) fail "No recipe guidance for ${namespace}: ${description}" ;;
+    esac
+    assert_success
+    for recipe in $recipes; do
+        assert_output --regexp "(^|[^[:alnum:]_])${recipe}([^[:alnum:]_]|$)"
+    done
+}
+
+@test "#707: test namespace guidance covers every current user recipe" {
+    _assert_namespace_recipe_guidance test
+}
+
 @test "#707: root namespace descriptions point to their help or recipe listing" {
     _just --list
     assert_success
     local _namespace
-    for _namespace in test box verify job; do
+    assert_line --regexp '^ +test \.\.\. +# .*just --list test'
+    for _namespace in box verify job; do
         assert_line --regexp "^ +${_namespace} \\.\\.\\. +# .*just ${_namespace} help"
     done
     for _namespace in agent worktree; do
