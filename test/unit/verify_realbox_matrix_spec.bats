@@ -746,8 +746,9 @@ _run_cleanup_fault() {
         printf "%s\n" "${_54_PID}" >"${MATRIX_STATE}/expected-pid"
         kill() { :; }
         # Inject only the wait and stop outcomes; cleanup remains real.
-        eval "_54_reap() { return $1; }"
-        eval "_54_stop_session() { return $2; }"
+        reap_rc="$1" stop_rc="$2"
+        _54_reap() { return "${reap_rc}"; }
+        _54_stop_session() { return "${stop_rc}"; }
         rc=0
         _54_cleanup || rc=$?
         printf "%s\n" "${_54_PID}" >"${MATRIX_STATE}/remaining-pid"
@@ -778,5 +779,14 @@ _run_cleanup_fault() {
     [[ "${stderr}" == *"pid-record=${MATRIX_STATE}/cleanup-evidence/cleanup.pid"* ]]
     [[ "${stderr}" == *"surviving process: pid="* ]]
     [[ "${stderr}" == *"manual recovery:"* ]]
+    assert_output ''
+}
+
+@test "#696: normal cleanup removes evidence and clears PID with success" {
+    _run_cleanup_fault 0 0
+    assert_success
+    [ ! -e "${MATRIX_STATE}/cleanup-evidence" ]
+    [ "$(cat "${MATRIX_STATE}/remaining-pid")" = '' ]
+    [ -z "${stderr}" ]
     assert_output ''
 }
