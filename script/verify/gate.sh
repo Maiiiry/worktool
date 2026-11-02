@@ -13,9 +13,10 @@
 #
 # ITEMS
 #   2.1  the bare seven-stage `just test` run is green
-#   2.2  every M3 sub-issue PR body shows RED evidence before GREEN
-#        evidence (the check itself is doc/evidence/tdd.sh, kept where it
-#        is: it is the implementation this item has always used)
+#   2.2  each of the fixed ten sub-issue PR bodies (#152-#156, #165-#169)
+#        shows RED evidence before GREEN evidence (the check itself is
+#        doc/evidence/tdd.sh, kept where it is: it is the implementation
+#        this item has always used)
 #   2.3  the "window -> box -> fish" chain is proven by CI: the
 #        integration ghostty group and the system-real chain cases
 #   2.4  the acceptance machinery's own negative: the 2.2 checker bites
@@ -301,7 +302,7 @@ _item_fn() {
 _item_title() {
     case "$1" in
         2.1) printf '%s\n' "the bare seven-stage just test run is green" ;;
-        2.2) printf '%s\n' "every sub-issue PR body shows RED evidence before GREEN" ;;
+        2.2) printf '%s\n' "the fixed ten sub-issue PR bodies show RED evidence before GREEN" ;;
         2.3) printf '%s\n' "CI proves the window -> box -> fish chain" ;;
         2.4) printf '%s\n' "the acceptance machinery's own negative bites" ;;
         *)   return 1 ;;
