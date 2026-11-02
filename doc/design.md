@@ -167,8 +167,9 @@ namespaces, generic tooling, min->max coverage」(零特例、以動作命名、
    各動詞的 `--help` 轉發給腳本。module 以 `set working-directory` 讓 recipe
    一律在 repo 根目錄執行:`script/<ns>/` 與 `.agents/script/` 用 `'../..'`,
    `.agents/script/worktree/` 用 `'../../..'`(`just` 預設以 module 檔所在目錄為 cwd)。
-   `test`、`box`、`verify` 的 namespace 層級說明是
-   `just <ns>` 或 `just <ns> help`;recipe 層級的 `--help` 由 recipe 原樣轉發給腳本
+   `box`、`verify` 的 namespace 層級說明是 `just <ns>`(列出動詞)或
+   `just <ns> help`;`test` 的說明是 `just test help`,裸 `just test` 會跑 CI 的
+   全部步驟。recipe 層級的 `--help` 由 recipe 原樣轉發給腳本
    (base ADR-00000011 §6:`just <ns> --help` 這種帶橫線的名字不會被 `just` 當成
    recipe,所以 namespace 說明走 `help` recipe)。recipe 上方那一行英文註解就是
    `just --list` 顯示的說明,保持一行。
