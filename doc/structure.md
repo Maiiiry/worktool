@@ -22,21 +22,26 @@ worktool/
 ├── tool/                host 端 GUI/驅動 install script(M11/M12 佔位,.gitkeep)
 ├── script/              腳本樹,依「動作」命名,每個動作一個目錄 = 一個 just 命名空間
 │   ├── test/            自我測試(just test ...)
-│   │   ├── justfile.test        `test` 命名空間:薄轉發到 test.sh / selfcheck.sh
+│   │   ├── justfile.test        `test` 命名空間:薄轉發到 test.sh / selfcheck.sh / check-script-layout.sh / verify-env.sh
 │   │   ├── test.sh              測試執行器:host 端旗標 --lint/--unit/.../--system-real
 │   │   │                        (無旗標 = 全部依序跑);容器內以 --ci-* 跑真正的 gate
 │   │   ├── selfcheck.sh         一鍵自檢(使用者 clone 後執行;dry-run 契約 + 無效清單拒絕)
+│   │   ├── check-script-layout.sh 腳本目錄版面與版本產物檢查(just test script-layout)
+│   │   ├── verify-env.sh        建置驗收映像，以 uid-1001 的 bind mount checkout 檢查真實 host 工具(just test verify-env)
 │   │   └── system-real-entry.sh DinD runner 入口:起巢狀 dockerd、等就緒、跑 real-engine 組、清理
-│   ├── verify/         驗收群組(just verify ...；裸命令只列清單)
-│   │   ├── justfile.verify     `verify` 命名空間:列群組、薄轉發與各腳本 help
-│   │   ├── all.sh              依序驗收 ui / gate / setup / diagram / evidence，遇錯即停
-│   │   ├── ui.sh               1.1：box 命名空間介面
-│   │   ├── gate.sh             2.1–2.4：自動化 gate、TDD 證據與負向案例
-│   │   ├── setup.sh            3.1–3.13：暫存 HOME 下的設定與狀態
-│   │   ├── diagram.sh          4.1：draw.io SVG 與 README 引用
-│   │   ├── realbox.sh          5.1–5.4 與 5.2 分步：需明確授權的實機驗收
-│   │   ├── config_backup_paths.sh  實機驗收的設定備份路徑共用 helper
-│   │   └── evidence.sh         6.1–6.3：外部 CI 與流程證據
+│   ├── verify/          驗收群組(just verify ...；裸命令只列清單)
+│   │   ├── justfile.verify      `verify` 命名空間:列群組、薄轉發與各腳本 help
+│   │   ├── all.sh               依序驗收 ui / gate / setup / diagram / evidence，遇錯即停
+│   │   ├── ui.sh                1.1：box 命名空間介面
+│   │   ├── gate.sh              2.1–2.4：自動化 gate、TDD 證據與負向案例
+│   │   ├── setup.sh             3.1–3.13：暫存 HOME 下的設定與狀態
+│   │   ├── diagram.sh           4.1：draw.io SVG 與 README 引用
+│   │   ├── realbox.sh           5.1–5.4 與 5.2 分步：需明確授權的實機驗收
+│   │   ├── config_backup_paths.sh 實機驗收的設定備份路徑共用 helper
+│   │   └── evidence.sh          6.1–6.3：外部 CI 與流程證據
+│   ├── agent/           agent 啟動入口(just agent ...；裸命令只列清單)
+│   │   ├── justfile.agent       `agent` 命名空間:列清單、薄轉發到 codex.sh
+│   │   └── codex.sh             無 GitHub 憑證的 headless Codex 啟動；`--` 後參數原樣轉發(見 Agent hook 節)
 │   └── box/             dev 盒生命週期(just box ...)
 │       ├── justfile.box         `box` 命名空間:薄轉發到 assemble.sh / bench.sh / setup.sh / status.sh / enter.sh
 │       ├── assemble.sh          從清單 assemble dev 盒的薄包裝器(--dry-run / --file / --home / --help);建立時指定盒子獨立 HOME
