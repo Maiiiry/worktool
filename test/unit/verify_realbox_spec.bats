@@ -3884,6 +3884,8 @@ STUB
         assert_failure 3
         assert_equal "$(cat "${STATE}/clock")" 13
         refute_output --partial 'cannot inventory owned window'
+        refute_output --partial 'keeping ownership evidence'
+        [ ! -d "$(cat "${STATE}/window-directory")" ]
         rm -f "${STATE}/window-directory"
         _realbox_quiet 5.2.3
         _realbox_quiet 5.2.1

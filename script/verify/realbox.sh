@@ -1074,15 +1074,16 @@ _52_close_window() {
     [[ -n "${_52_WINDOW_DIR:-}" ]] || return 0
     # Start retries only while a full second remains, so a retry sweep is
     # never cut off by the deadline mid-snapshot.
-    local _52_DEADLINE=$((SECONDS + 4)) rc retry_until=$((SECONDS + 3))
+    local _52_DEADLINE=$((SECONDS + 4)) rc scanned=0 retry_until=$((SECONDS + 3))
     while (( SECONDS < retry_until )); do
         rc=0
         _52_sweep_window || rc=$?
         [[ "${rc}" -ne 1 ]] || { _52_keep_window; return 1; }
+        scanned=1
         [[ "${rc}" -ne 0 && "${_52_WINDOW_PENDING:-0}" -eq 1 ]] || break
         sleep 0.1 || { _52_keep_window; return 1; }
     done
-    (( SECONDS < _52_DEADLINE )) || { _52_keep_window; return 1; }
+    [[ "${scanned}" -eq 1 ]] || { _52_keep_window; return 1; }
     rm -rf -- "${_52_WINDOW_DIR}" || return 1
     _52_WINDOW_DIR=''
 }
