@@ -3462,6 +3462,9 @@ STUB
 
 @test "#663: standalone apply times out inconclusively and keeps restore available" {
     _auto_window_tools
+    # The timeout verdict must not depend on scheduler time while ownership rows are scanned.
+    # Deadline-inside-scan behavior has dedicated #700 coverage.
+    _control_window_clock
     _realbox_quiet 5.2.1
     export FAKE_NO_WINDOW=1
     run "${REALBOX}" --allow-real-box 5.2.2 </dev/null
