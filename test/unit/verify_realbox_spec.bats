@@ -4132,6 +4132,8 @@ STUB
 
 @test "#663: a non-fish wrapper seen once keeps its deadline probe after later sweeps lose it" {
     _auto_window_tools
+    # The deadline must expire between sweeps, not inside an ownership probe.
+    _control_window_clock
     _realbox_quiet 5.2.1
     cp "${STUBS}/ps" "${STATE}/exited-ps"
     cp "${STUBS}/readlink" "${STATE}/seen-readlink"
