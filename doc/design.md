@@ -198,6 +198,8 @@ recipe 原文,也是 `just` 執行時回顯的那一行):
 | `just test` | `./script/test/test.sh`(CI 跑的全部:lint、unit、matrix、integration、system、acceptance、system-real,依序,遇到第一個失敗即停) |
 | `just test build [args]` | `./script/test/test.sh --build "$@"` |
 | `just test lint [args]` | `./script/test/test.sh --lint "$@"` |
+| `just test changed [args]` | `./script/test/test.sh --changed "$@"`(args:`--base <ref>`,預設 `origin/main`) |
+| `just test guards [args]` | `./script/test/test.sh --guards "$@"` |
 | `just test unit [args]` | `./script/test/test.sh --unit "$@"` |
 | `just test matrix [args]` | `./script/test/test.sh --matrix "$@"` |
 | `just test integration [args]` | `./script/test/test.sh --integration "$@"` |
@@ -206,6 +208,8 @@ recipe 原文,也是 `just` 執行時回顯的那一行):
 | `just test acceptance [args]` | `./script/test/test.sh --acceptance "$@"` |
 | `just test selfcheck [args]` | `./script/test/selfcheck.sh "$@"`(交付自檢;`--root X` 原樣傳入) |
 | `just test help` / `just test h` | `./script/test/test.sh --help` |
+| `just test script-layout [args]` | `@./script/test/check-script-layout.sh "$@"`(args:`--root <repo>`、`--help`;開頭的 `@` 讓 `just` 執行時不回顯這一行) |
+| `just test verify-env [args]` | `./script/test/verify-env.sh "$@"`(args:`--help`) |
 
 **namespace `box`**(`script/box/justfile.box`,`set working-directory := '../..'`):
 
