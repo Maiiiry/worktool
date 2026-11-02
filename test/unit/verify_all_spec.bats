@@ -81,7 +81,11 @@ load "${BATS_TEST_DIRNAME}/../helper/common"
         "${REPO_ROOT}/doc/acceptance.md")"
     run printf '%s\n' "${_section}"
     assert_output --partial '/proc/self/ns/mnt'
-    refute_output --regexp 'inspect.*init|init.*inspect|/proc/<init PID>/ns/mnt'
+    # Line-scoped: bash regex '.' also matches newlines, so a whole-output
+    # regexp would pair unrelated words across separate lines.
+    run grep -E 'inspect.*init|init.*inspect|/proc/<init PID>/ns/mnt' \
+        <<<"${_section}"
+    assert_failure 1
 }
 
 # Match only listed code paths (exact, directory or glob), or a listed ADR
