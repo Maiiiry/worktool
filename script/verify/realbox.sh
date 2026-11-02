@@ -716,9 +716,6 @@ item_51() {
 # 5.2  ghostty window chain: back up, apply, confirm, restore
 # =============================================================================
 
-# Overridable only by specs editing a private copy of this script.
-_52_PROC_ROOT=/proc
-
 # --- step 1 ------------------------------------------------------------------
 # A restored managed command can correctly enter an existing box, which cannot
 # satisfy the host-window evidence. Refuse that baseline before any writes.
@@ -867,16 +864,6 @@ _52_process_snapshot() {
     done <<<"${_52_ROWS}"
 }
 
-# Gone only when the PID lookup reports ENOENT and the proc root still
-# answers for ourselves afterwards; any other lookup error stays
-# undetermined. A reused PID shows as present.
-_52_process_gone() {
-    local error
-    error="$(LC_ALL=C; cd -- "${_52_PROC_ROOT}/$1" 2>&1 >/dev/null)" && return 1
-    [[ "${error}" == *': No such file or directory' ]] || return 1
-    [[ -e "${_52_PROC_ROOT}/self" ]]
-}
-
 # Return 0 for owned, 1 for definitely not owned, 2 for undetermined.
 _52_window_root() {
     local pid="$1" parent cwd depth
@@ -886,10 +873,7 @@ _52_window_root() {
         parent="${_52_PARENTS[${pid}]:-0}"
         [[ "${parent}" =~ ^[1-9][0-9]*$ && "${parent}" != "${pid}" ]] || return 1
         if [[ "${_52_COMMS[${parent}]:-}" == ghostty ]]; then
-            cwd="$(timeout -s KILL 1 readlink "/proc/${pid}/cwd" 2>/dev/null)" || {
-                _52_process_gone "${pid}" && return 1
-                return 2
-            }
+            cwd="$(timeout -s KILL 1 readlink "/proc/${pid}/cwd" 2>/dev/null)" || return 2
             (( SECONDS < ${_52_DEADLINE:-SECONDS+1} )) || return 2
             if [[ "${cwd}" == "${_52_WINDOW_DIR}" ]] && ! grep -qE "^[[:space:]]*${pid}[[:space:]]" "${_52_WINDOW_DIR}/before"; then
                 printf '%s\n' "${pid}"

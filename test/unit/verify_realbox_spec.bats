@@ -646,6 +646,26 @@ _repo_copy() {
     printf '%s\n' "${_dst}"
 }
 
+# Insert the lines on stdin into file $2 immediately before its first line
+# equal to $1, so a later definition of a shell function shadows the shipped
+# one. Pure bash; the result is copied back INTO the file so it keeps its
+# executable bit.
+_insert_before() {
+    local _anchor="$1" _file="$2" _frag _line _done=0
+    _frag="$(cat)"
+    : >"${_file}.new"
+    while IFS= read -r _line || [ -n "${_line}" ]; do
+        if [ "${_done}" -eq 0 ] && [ "${_line}" = "${_anchor}" ]; then
+            printf '%s\n' "${_frag}" >>"${_file}.new"
+            _done=1
+        fi
+        printf '%s\n' "${_line}" >>"${_file}.new"
+    done <"${_file}"
+    [ "${_done}" -eq 1 ] || return 1
+    cat "${_file}.new" >"${_file}"
+    rm -f "${_file}.new"
+}
+
 # Only the distrobox isolation write overwrites user content.
 _degrade_distrobox_overwrites() {
     _insert_before 'setup_run() {' "$1/script/box/setup.sh" <<'FRAG'
@@ -2742,7 +2762,6 @@ STUB
 @test "#513: automated restore needs no terminal prompt" {
     _realbox_quiet 5.2.1
     _realbox_quiet 5.2.2
-    # Apply has installed the private proc-root seam before we wrap REALBOX.
     export ORIGINAL_REALBOX="${REALBOX}" RESTORE_STDERR="${STATE}/restore-stderr"
     cat >"${STATE}/restore-with-stderr" <<'STUB'
 #!/usr/bin/env bash
@@ -3750,78 +3769,30 @@ _assert_52_kept_evidence_stderr() {
     done
 }
 
-@test "#700: a cleanup cwd probe failure on a vanished process is not undetermined" {
+@test "#700: a cwd probe failure on a vanished unrelated window still keeps evidence" {
     _cleanup_cwd_tools
     cp "${STUBS}/readlink" "${STATE}/vanished-readlink"
     cat >"${STUBS}/readlink" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == /proc/5556/cwd && -e "${FAKE_STATE_DIR}/cleanup-ready" ]]; then
-    rm -rf "${FAKE_STATE_DIR}/proc/5556"
     exit "${FAKE_VANISHED_RC}"
 fi
 exec "${FAKE_STATE_DIR}/vanished-readlink" "$@"
 STUB
-    local probe_rc
+    local probe_rc directory
     for probe_rc in 1 137; do
         rm -f "${STATE}/cleanup-ready" "${STATE}/closed"
-        mkdir -p "${STATE}/proc/5556"
         _realbox_quiet 5.2.1
         FAKE_VANISHED_RC="${probe_rc}" run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
-        assert_success
-        [[ "${stderr}" != *'kept evidence='* ]]
-        [ ! -e "${STATE}/proc/5556" ]
-        assert_equal "$(cat "${STATE}/closed")" '-HUP -- -4240'
-        run find "$(_backup_dir)" -maxdepth 1 -name 'window.*'
-        assert_success
-        assert_output ''
-        rm -f "${STATE}/cleanup-ready"
-        mkdir -p "${STATE}/proc/5556"
-        _realbox_quiet 5.2.3
-    done
-}
-
-@test "#700: a failed process existence check after a cwd probe failure stays undetermined" {
-    _cleanup_cwd_tools
-    cp "${STUBS}/readlink" "${STATE}/existence-readlink"
-    cat >"${STUBS}/readlink" <<'STUB'
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$*" == /proc/5556/cwd && -e "${FAKE_STATE_DIR}/cleanup-ready" ]]; then
-    rm -rf "${FAKE_STATE_DIR}/proc/5556"
-    case "${FAKE_EXISTENCE_CASE}" in
-        self-missing) rm -rf "${FAKE_STATE_DIR}/proc/self" ;;
-        lookup-error) ln -s 5556 "${FAKE_STATE_DIR}/proc/5556" ;;
-    esac
-    exit 1
-fi
-exec "${FAKE_STATE_DIR}/existence-readlink" "$@"
-STUB
-    local existence_case directory
-    for existence_case in self-missing lookup-error; do
-        rm -f "${STATE}/cleanup-ready" "${STATE}/closed"
-        rm -rf "${STATE}/proc/5556"
-        mkdir -p "${STATE}/proc/self" "${STATE}/proc/5556"
-        _realbox_quiet 5.2.1
-        FAKE_EXISTENCE_CASE="${existence_case}" run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
         assert_failure 1
         directory="$(find "$(_backup_dir)" -maxdepth 1 -type d -name 'window.*')"
         [ -d "${directory}" ]
         [ -f "${directory}/before" ]
-        [ ! -e "${STATE}/proc/5556" ]
-        if [[ "${existence_case}" == self-missing ]]; then
-            [ ! -e "${STATE}/proc/self" ]
-            [ ! -L "${STATE}/proc/5556" ]
-        else
-            [ -d "${STATE}/proc/self" ]
-            [ -L "${STATE}/proc/5556" ]
-            assert_equal "$(readlink "${STATE}/proc/5556")" 5556
-        fi
         _assert_52_kept_evidence_stderr "${directory}"
-        rm -rf "${STATE}/proc/5556"
-        mkdir -p "${STATE}/proc/self" "${STATE}/proc/5556"
+        assert_equal "$(cat "${STATE}/closed")" '-HUP -- -4240'
+        rm -f "${STATE}/cleanup-ready" "${STATE}/closed"
         rm -rf -- "${directory}"
-        rm -f "${STATE}/cleanup-ready"
         _realbox_quiet 5.2.3
     done
 }
@@ -3837,59 +3808,6 @@ STUB
     [ -f "${directory}/before" ]
     _assert_52_kept_evidence_stderr "${directory}"
     [ ! -e "${STATE}/closed" ]
-}
-
-@test "#700: the cleanup deadline passing between sweep rows without an undetermined probe keeps evidence" {
-    _cleanup_cwd_tools
-    _control_window_clock
-    cp "${STUBS}/ps" "${STATE}/deadline-ps"
-    cp "${STUBS}/readlink" "${STATE}/deadline-readlink"
-    cat >"${STUBS}/ps" <<'STUB'
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$*" == '-e -o pid=,ppid=,comm=' && -e "${FAKE_STATE_DIR}/cleanup-ready" ]]; then
-    printf '1 0 init\n900 1 ghostty\n'
-    if [[ -e "${FAKE_STATE_DIR}/window-directory" ]]; then
-        printf '4240 900 distrobox\n'
-    fi
-    printf '5556 900 fish\n'
-    if [[ "${FAKE_SWEEP_ROW_ORDER}" == middle ]]; then
-        printf '7777 1 conmon\n'
-    fi
-    exit 0
-fi
-exec "${FAKE_STATE_DIR}/deadline-ps" "$@"
-STUB
-    cat >"${STUBS}/readlink" <<'STUB'
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$*" == /proc/5556/cwd && -e "${FAKE_STATE_DIR}/cleanup-ready"
-    && -e "${FAKE_STATE_DIR}/closed" ]]; then
-    rm -rf "${FAKE_STATE_DIR}/proc/5556"
-    read -r now <"${FAKE_STATE_DIR}/clock"
-    printf '%s\n' "$((now + 5))" >"${FAKE_STATE_DIR}/clock"
-    exit 1
-fi
-exec "${FAKE_STATE_DIR}/deadline-readlink" "$@"
-STUB
-    local row_order directory
-    for row_order in last middle; do
-        rm -f "${STATE}/cleanup-ready" "${STATE}/closed"
-        mkdir -p "${STATE}/proc/5556"
-        _realbox_quiet 5.2.1
-        FAKE_SWEEP_ROW_ORDER="${row_order}" run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
-        assert_failure 1
-        directory="$(find "$(_backup_dir)" -maxdepth 1 -type d -name 'window.*')"
-        [ -d "${directory}" ]
-        [ -f "${directory}/before" ]
-        _assert_52_kept_evidence_stderr "${directory}"
-        [[ "${stderr}" != *'window ownership undetermined'* ]]
-        [ ! -e "${STATE}/proc/5556" ]
-        assert_equal "$(cat "${STATE}/closed")" '-HUP -- -4240'
-        rm -rf -- "${directory}"
-        rm -f "${STATE}/cleanup-ready"
-        _realbox_quiet 5.2.3
-    done
 }
 
 @test "#700: an undetermined ownership probe cannot become successful apply or restore evidence" {
@@ -4164,9 +4082,10 @@ STUB
 # Replace only Bash's clock in a private script copy. All deadline arithmetic
 # and ownership decisions remain shipped code; subprocesses share logical time.
 _control_window_clock() {
-    local clock_expression
+    local repo clock_expression
     export FAKE_CLOCK_DELAY="${1:-0}"
-    _private_window_script
+    repo="$(_repo_copy)"
+    REALBOX="${repo}/script/verify/realbox.sh"
     printf '0\n' >"${STATE}/clock"
     clock_expression="\$(<\"\${FAKE_STATE_DIR}/clock\")"
     sed -i "s|SECONDS|${clock_expression}|g" "${REALBOX}"

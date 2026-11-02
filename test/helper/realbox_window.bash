@@ -2,52 +2,6 @@
 REALBOX_FAKED_TOOLS=(distrobox just gh jq loginctl)
 REALBOX_SHIMMED_TOOLS=(mkdir grep cut wc sort sha256sum readlink tee mktemp id date uname cp mv rm awk)
 
-# Insert the lines on stdin into file $2 immediately before its first line
-# equal to $1, so a later definition of a shell function shadows the shipped
-# one. Pure bash; the result is copied back INTO the file so it keeps its
-# executable bit.
-_insert_before() {
-    local _anchor="$1" _file="$2" _frag _line _done=0
-    _frag="$(cat)"
-    : >"${_file}.new"
-    while IFS= read -r _line || [ -n "${_line}" ]; do
-        if [ "${_done}" -eq 0 ] && [ "${_line}" = "${_anchor}" ]; then
-            printf '%s\n' "${_frag}" >>"${_file}.new"
-            _done=1
-        fi
-        printf '%s\n' "${_line}" >>"${_file}.new"
-    done <"${_file}"
-    [ "${_done}" -eq 1 ] || return 1
-    cat "${_file}.new" >"${_file}"
-    rm -f "${_file}.new"
-}
-
-# Both the clock and process-existence seams reuse this private script copy.
-_private_window_script() {
-    [[ "${REALBOX}" == */script/verify/realbox.sh ]] || return 0
-    local source_repo="${REALBOX%/script/verify/realbox.sh}"
-    local repo="${BATS_TEST_TMPDIR}/window-repo"
-    [[ "${REALBOX}" != "${repo}/script/verify/realbox.sh" ]] || return 0
-    mkdir -p "${repo}"
-    cp -a "${source_repo}/justfile" "${source_repo}/lib" "${source_repo}/script" \
-        "${source_repo}/box" "${repo}/"
-    REALBOX="${repo}/script/verify/realbox.sh"
-    # Rewrite exactly one constant; keep the shipped classification function.
-    local line matches=0
-    : >"${REALBOX}.new"
-    while IFS= read -r line || [[ -n "${line}" ]]; do
-        if [[ "${line}" == '_52_PROC_ROOT=/proc' ]]; then
-            printf '%s\n' '_52_PROC_ROOT="${FAKE_STATE_DIR}/proc"' >>"${REALBOX}.new"
-            matches=$((matches + 1))
-        else
-            printf '%s\n' "${line}" >>"${REALBOX}.new"
-        fi
-    done <"${REALBOX}"
-    [[ "${matches}" -eq 1 ]] || return 1
-    cat "${REALBOX}.new" >"${REALBOX}"
-    rm -f "${REALBOX}.new"
-}
-
 _prepare_realbox_tools() {
     REALBOX="${REPO_ROOT}/script/verify/realbox.sh"
     STATE="${BATS_TEST_TMPDIR}/state"
@@ -177,12 +131,6 @@ _auto_window_tools() {
 
 
 _auto_window_ipc() {
-    # Wrappers must delegate to a script that already has the private seam.
-    if [[ "${REALBOX}" == */script/verify/realbox.sh ]]; then
-        _private_window_script || return 1
-    fi
-    rm -rf "${FAKE_STATE_DIR}/proc/5556"
-    mkdir -p "${FAKE_STATE_DIR}/proc/"{self,1,900,4240,4242,4344,5556,6000,800}
     cp "${STUBS}/ps" "${STATE}/auto-ps"
     cp "${STUBS}/readlink" "${STATE}/auto-readlink"
     rm -f "${STUBS}/ghostty"
