@@ -299,6 +299,18 @@ EOF
     assert_output "${_expected}"
 }
 
+@test "#707: root namespace descriptions point to their help or recipe listing" {
+    _just --list
+    assert_success
+    local _namespace
+    for _namespace in test box verify job; do
+        assert_line --regexp "^ +${_namespace} \\.\\.\\. +# .*just ${_namespace} help"
+    done
+    for _namespace in agent worktree; do
+        assert_line --regexp "^ +${_namespace} \\.\\.\\. +# .*just ${_namespace} lists"
+    done
+}
+
 @test "#665: box descriptions do not promise rm in M3" {
     local _stale_promise='((adds|再加|later)[[:space:]]+rm|adds[[:space:]]+enter[[:space:]]*/[[:space:]]*rm)([[:space:][:punct:]]|$)'
     _just --list

@@ -11,20 +11,20 @@
 #
 # The doc comment above each `mod?` is what `just --list` shows for it.
 
-# Self-test: lint + bats tiers in Docker (just test [build|lint|unit|matrix|integration|system|system-real|acceptance|selfcheck])
+# Self-tests in Docker; see just test help for actions and options.
 mod? test 'script/test/justfile.test'
-# Dev box lifecycle: just box assemble [--dry-run] [--file X] | bench [--runs N] [--max-ms N] [--json] | setup [--auto-enter yes|no ...] | status | enter [--box N] [-- CMD]
+# Dev box lifecycle; see just box help for actions and options.
 mod? box 'script/box/justfile.box'
-# Acceptance checks of doc/acceptance.md: just verify all | ui | gate | setup | diagram | realbox | evidence [ITEM]
+# Acceptance checks of doc/acceptance.md; see just verify help for actions and options.
 mod? verify 'script/verify/justfile.verify'
-# Agent launch without GitHub authentication (headless fallback).
+# Agent launch without GitHub authentication; just agent lists actions.
 mod? agent 'script/agent/justfile.agent'
 
-# Cleanup merged linked worktrees (dry-run by default).
+# Cleanup merged linked worktrees (dry-run by default); just worktree lists actions.
 mod? worktree '.agents/script/worktree/justfile.worktree'
 
 
-# Detached agent jobs and compact results.
+# Detached agent jobs and compact results; see just job help for actions and options.
 mod? job '.agents/script/justfile.job'
 
 # Default: list the namespaces.

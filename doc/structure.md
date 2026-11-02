@@ -346,11 +346,11 @@ verify 例外只適用於可直接解析的呼叫。無受限動作的日常指�
 | `just test help` / `just test h` | `./script/test/test.sh --help` |
 | `just test script-layout [--root <repo>] [--help]` | `./script/test/check-script-layout.sh`（檢查腳本目錄版面與版本產物；可指定 repo） |
 | `just box` | 列出 box 的動詞(`just --justfile script/box/justfile.box --list`) |
-| `just box assemble [args]` | `./script/box/assemble.sh [args]`(`--dry-run`、`--file <清單>`、`--home <路徑>`、`--help`) |
+| `just box assemble [args]` | `./script/box/assemble.sh [args]`(`--dry-run`、`--file <清單>`、`--home <路徑>`、`-h` / `--help`) |
 | `just box bench [--box NAME] [--runs N] [--warmup N] [--max-ms N] [--json] [--shell CMD] [--max-wait N] [-h\|--help]` | `./script/box/bench.sh`（量測 enter、shell、inbox 延遲，各列 min／median／max；預設記錄 10 次、暖身 2 次；`--max-ms` 限制 shell median，`--json` 改輸出 JSON；`--max-wait` 限制等待 host 安靜的秒數，預設 60、CI 為 120） |
-| `just box setup [args]` | `./script/box/setup.sh [args]`(`--auto-enter yes\|no`、`--terminal ghostty\|none`、`--box <名稱>`、`--distrobox <路徑>`、`--dry-run`、`--help`;見 [`enter.md`](enter.md)) |
-| `just box status [args]` | `./script/box/status.sh [args]`(`--help`) |
-| `just box enter [args]` | `./script/box/enter.sh [args]`(`--box <名稱>`、`--distrobox <路徑>`、`--timeout <秒>`、`-- <指令>...`、`--help`;見 [`enter.md`](enter.md)) |
+| `just box setup [args]` | `./script/box/setup.sh [args]`(`--auto-enter yes\|no`、`--terminal ghostty\|none`、`--box <名稱>`、`--distrobox <路徑>`、`--dry-run`、`-h` / `--help`;見 [`enter.md`](enter.md)) |
+| `just box status [args]` | `./script/box/status.sh [args]`(`-h` / `--help`) |
+| `just box enter [args]` | `./script/box/enter.sh [args]`(`--box <名稱>`、`--distrobox <路徑>`、`--timeout <秒>`、`-- <指令>...`、`-h` / `--help`;見 [`enter.md`](enter.md)) |
 | `just box help` / `just box h` | 依序 `./script/box/assemble.sh --help`、`./script/box/bench.sh --help`、`./script/box/setup.sh --help`、`./script/box/status.sh --help`、`./script/box/enter.sh --help` |
 | `just verify` | 列出驗收群組並提示尚未執行驗證；exit 0 不代表驗收通過 |
 | `just verify all [-l\|--list] [-h\|--help]` | `./script/verify/all.sh`（依序執行 ui、gate、setup、diagram、evidence，遇錯即停並印出各群組與總 verdict；不執行 realbox；`--list` 只列群組） |
