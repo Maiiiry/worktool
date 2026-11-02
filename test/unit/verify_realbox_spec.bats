@@ -3750,6 +3750,38 @@ STUB
     done
 }
 
+@test "#700: a tracked window losing cwd ownership is not proof that it closed" {
+    _auto_window_tools
+    cp "${STUBS}/ps" "${STATE}/tracked-ps"
+    cp "${STUBS}/readlink" "${STATE}/tracked-readlink"
+    cat >"${STUBS}/ps" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == '-p 4240 -o pgid=,sid=' ]]; then
+    touch "${FAKE_STATE_DIR}/stop-started"
+fi
+exec "${FAKE_STATE_DIR}/tracked-ps" "$@"
+STUB
+    cat >"${STUBS}/readlink" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == /proc/4240/cwd && -e "${FAKE_STATE_DIR}/stop-started" ]]; then
+    printf '/unrelated/window\n'
+    exit 0
+fi
+exec "${FAKE_STATE_DIR}/tracked-readlink" "$@"
+STUB
+    _realbox_quiet 5.2.1
+    run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+    assert_failure 1
+    local directory
+    directory="$(cat "${STATE}/window-directory")"
+    [ -f "${directory}/before" ]
+    [[ "${stderr}" == *"kept evidence=${directory}"* ]]
+    [[ "${stderr}" == *'manual check:'* ]]
+    [ ! -e "${STATE}/closed" ]
+}
+
 @test "#663: failed cleanup inventories preserve owned window evidence" {
     _auto_window_tools
     cp "${STUBS}/ps" "${STATE}/cleanup-ps"

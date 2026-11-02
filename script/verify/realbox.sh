@@ -1002,7 +1002,8 @@ _52_current_root() {
     local -A _52_PARENTS=() _52_COMMS=()
     _52_process_snapshot || return 2
     [[ -n "${_52_COMMS[$1]+present}" ]] || return 1
-    _52_window_root "$1"
+    # A tracked PID losing ownership is not proof that its window closed.
+    _52_window_root "$1" || return 2
 }
 
 _52_stop_window() {
