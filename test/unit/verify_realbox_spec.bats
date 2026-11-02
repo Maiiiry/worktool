@@ -1378,6 +1378,9 @@ _window_input() {
 
 @test "#362: 5.2 refuses an existing fish process as new-window evidence" {
     _fake_window_process
+    # The timeout verdict must not depend on scheduler time inside an ownership probe.
+    # Deadline-inside-probe behavior has dedicated #700 coverage.
+    _control_window_clock
     export FAKE_WINDOW_BASELINE='4242 fish'
     run _window_input 4242
     assert_equal "$(cat "${STATE}/window-rc")" "3"
