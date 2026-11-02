@@ -18,6 +18,10 @@ _54_cleanup() {
             log_info "interrupt cleanup: stopped child rc=${rc} (expected after termination)"
         fi
         _54_stop_session "${_54_PID}" || failed=1
+        if [[ "${failed}" -ne 0 ]]; then
+            _54_keep_recovery
+            return 1
+        fi
         _54_PID=""
     fi
     if [[ -n "${_54_POLL_FD}" ]]; then exec {_54_POLL_FD}>&-; fi
@@ -25,6 +29,29 @@ _54_cleanup() {
         rm -rf -- "${_54_W}" || failed=1
     fi
     return "${failed}"
+}
+
+# Keep recovery usable after the supervisor has exited, not just in its variables.
+_54_keep_recovery() {
+    local file row status parent group session rest pid
+    local pid_record=missing recovery_files='capture files'
+    if printf '%s\n' "${_54_PID}" >"${_54_W}/cleanup.pid"; then
+        pid_record="${_54_W}/cleanup.pid"
+        recovery_files='capture files and cleanup.pid'
+    else
+        log_error "interrupt cleanup: cannot write PID record (pid=${_54_PID})"
+    fi
+    log_error "interrupt cleanup: kept evidence=${_54_W}; pid-record=${pid_record}; pid=${_54_PID}"
+    log_error "interrupt cleanup: surviving processes in owned session ${_54_PID}:"
+    for file in /proc/[0-9]*/stat; do
+        if ! IFS= read -r row 2>/dev/null <"${file}"; then continue; fi
+        read -r status parent group session rest <<<"${row##*) }"
+        [[ "${session}" == "${_54_PID}" && "${status}" != Z && "${status}" != X ]] || continue
+        pid="${file#/proc/}"
+        log_error "interrupt cleanup: surviving process: pid=${pid%/stat} ppid=${parent} pgid=${group} sid=${session} stat=${status}"
+    done
+    log_error "interrupt cleanup: manual recovery: inspect ${recovery_files} in ${_54_W}; verify process ownership and PID reuse before sending kill -TERM -- -<pgid> to each surviving owned group; confirm all have stopped before removing the evidence directory"
+    if [[ -n "${_54_POLL_FD}" ]]; then exec {_54_POLL_FD}>&-; fi
 }
 
 # timeout gives commands their own groups within the child's private session.

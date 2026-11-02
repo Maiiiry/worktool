@@ -734,3 +734,95 @@ STUB
     refute_output --partial 'signal-phase=assemble'
     [ ! -s "${MATRIX_STATE}/boxes" ]
 }
+
+# Exercise EXIT cleanup while the public supervisor still owns a live cell.
+_matrix_cleanup_fault() {
+    _matrix_child_stub
+    sed -i "s/^trap .* TERM$/trap '' TERM/" "${MATRIX_STATE}/child"
+    sed -i "/^touch /i\\    printf \"resident-ready\\\\n\" >>\"\${TMPDIR}/capture\"" "${MATRIX_STATE}/child"
+    # Simulate undelivered signals at the adapter, with an independent result.
+    printf 'verify_stop_group() { return %s; }\n' "$1" \
+        >>"${MATRIX_STATE}/repo/lib/verify_run.sh"
+}
+
+_matrix_assert_recovery() {
+    local pid evidence survivor diagnostics="$1"
+    local -a records
+    read -r pid <"${MATRIX_STATE}/child.pid"
+    survivor="${pid}"
+    if [[ -f "${MATRIX_STATE}/resident.pid" ]]; then
+        read -r survivor <"${MATRIX_STATE}/resident.pid"
+    fi
+    records=("${TMPDIR}"/wt-m3-54.*/cleanup.pid)
+    [ -f "${records[0]}" ]
+    [ "$(cat "${records[0]}")" = "${pid}" ]
+    evidence="${records[0]%/cleanup.pid}"
+    [ -f "${evidence}/assemble-INT/comments-before" ]
+    [ "$(cat "${evidence}/assemble-INT/capture")" = resident-ready ]
+    kill -0 "${survivor}"
+    [[ "${diagnostics}" == *"kept evidence=${evidence};"* ]]
+    [[ "${diagnostics}" == *"pid-record=${evidence}/cleanup.pid;"* ]]
+    [[ "${diagnostics}" == *"surviving process: pid=${survivor} "* ]]
+    [[ "${diagnostics}" == *"manual recovery:"* ]]
+    assert_line 'exit-signal=none'
+    assert_line 'rc=1'
+}
+
+@test "#696: interrupted supervisor preserves recovery evidence for a live timed-out child" {
+    local stderr=""
+    _matrix_cleanup_fault 0
+    run --separate-stderr node "${BATS_TEST_DIRNAME}/fixture/verify_signal.js" TERM bash \
+        "${REALBOX}" --allow-real-box 5.4
+    assert_success
+    _matrix_assert_recovery "${stderr}"
+    [[ "${stderr}" == *'interrupt cleanup: child reap wait deadline exceeded'* ]]
+}
+
+@test "#696: interrupted supervisor reports a missing PID record when it cannot be written" {
+    local stderr="" evidence
+    local -a records
+    _matrix_cleanup_fault 0
+    # A directory blocks the record write even when the test runs as root.
+    sed -i "/^touch /i\\mkdir \"\${TMPDIR}/../cleanup.pid\"" "${MATRIX_STATE}/child"
+    run --separate-stderr node "${BATS_TEST_DIRNAME}/fixture/verify_signal.js" TERM bash \
+        "${REALBOX}" --allow-real-box 5.4
+    assert_success
+    assert_line 'rc=1'
+    assert_line 'exit-signal=none'
+    records=("${TMPDIR}"/wt-m3-54.*/cleanup.pid)
+    evidence="${records[0]%/cleanup.pid}"
+    [ -d "${evidence}" ]
+    [ -d "${records[0]}" ]
+    [[ "${stderr}" == *'cannot write PID record'* ]]
+    [[ "${stderr}" != *"pid-record=${evidence}/cleanup.pid"* ]]
+    [[ "${stderr}" == *"kept evidence=${evidence}; pid-record=missing;"* ]]
+    [[ "${stderr}" == *'surviving process: pid='* ]]
+    [[ "${stderr}" == *'manual recovery:'* ]]
+    [[ "${stderr}" != *'inspect capture files and cleanup.pid'* ]]
+}
+
+@test "#696: interrupted supervisor preserves recovery evidence when a resident cannot be stopped" {
+    local stderr=""
+    _matrix_cleanup_fault 1
+    # The leader terminates normally; its TERM-ignoring resident survives.
+    sed -i '/^sleep "${MATRIX_READY_DELAY/,$d' "${MATRIX_STATE}/child"
+    cat >>"${MATRIX_STATE}/child" <<'STUB'
+trap 'exit 143' TERM
+bash -c 'trap "" TERM; touch "${MATRIX_STATE}/resident-ready"; exec sleep 10' &
+printf '%s\n' "$!" >"${MATRIX_STATE}/resident.pid"
+printf 'resident-ready\n' >>"${TMPDIR}/capture"
+# Publish only once the resident has installed its ignored signal disposition.
+deadline=$((SECONDS + 3))
+while [[ ! -e "${MATRIX_STATE}/resident-ready" ]]; do
+    ((SECONDS < deadline)) || exit 1
+    sleep 0.01
+done
+touch "${SIGNAL_STATE}/ready"
+wait "$!"
+STUB
+    run --separate-stderr node "${BATS_TEST_DIRNAME}/fixture/verify_signal.js" TERM bash \
+        "${REALBOX}" --allow-real-box 5.4
+    assert_success
+    _matrix_assert_recovery "${stderr}"
+    [[ "${stderr}" != *'child reap wait deadline exceeded'* ]]
+}
