@@ -778,6 +778,29 @@ _matrix_assert_recovery() {
     [[ "${stderr}" == *'interrupt cleanup: child reap wait deadline exceeded'* ]]
 }
 
+@test "#696: interrupted supervisor reports a missing PID record when it cannot be written" {
+    local stderr="" evidence
+    local -a records
+    _matrix_cleanup_fault 0
+    # A directory blocks the record write even when the test runs as root.
+    sed -i "/^touch /i\\mkdir \"\${TMPDIR}/../cleanup.pid\"" "${MATRIX_STATE}/child"
+    run --separate-stderr node "${BATS_TEST_DIRNAME}/fixture/verify_signal.js" TERM bash \
+        "${REALBOX}" --allow-real-box 5.4
+    assert_success
+    assert_line 'rc=1'
+    assert_line 'exit-signal=none'
+    records=("${TMPDIR}"/wt-m3-54.*/cleanup.pid)
+    evidence="${records[0]%/cleanup.pid}"
+    [ -d "${evidence}" ]
+    [ -d "${records[0]}" ]
+    [[ "${stderr}" == *'cannot write PID record'* ]]
+    [[ "${stderr}" != *"pid-record=${evidence}/cleanup.pid"* ]]
+    [[ "${stderr}" == *"kept evidence=${evidence}; pid-record=missing;"* ]]
+    [[ "${stderr}" == *'surviving process: pid='* ]]
+    [[ "${stderr}" == *'manual recovery:'* ]]
+    [[ "${stderr}" != *'inspect capture files and cleanup.pid'* ]]
+}
+
 @test "#696: interrupted supervisor preserves recovery evidence when a resident cannot be stopped" {
     local stderr=""
     _matrix_cleanup_fault 1
