@@ -172,8 +172,8 @@ namespaces, generic tooling, min->max coverage」(零特例、以動作命名、
    `just <ns>` 也列出動詞;`test` 例外,裸 `just test` 會跑 CI 的全部步驟。
    `just <ns> help`(`test`、`box`、`verify`、`job` 有)顯示腳本選項。
    recipe 層級的 `--help` 由 recipe 原樣轉發給腳本
-   (base ADR-00000011 §6:`just <ns> --help` 這種帶橫線的名字不會被 `just` 當成
-   recipe,所以 namespace 說明走 `help` recipe)。recipe 上方那一行英文註解就是
+   (base ADR-00000011 §6:帶橫線的 `just <ns> --help` 不會被 `just` 當成 recipe,
+   所以有 `help` recipe 的 namespace(`test`、`box`、`verify`、`job`)以它提供腳本選項說明)。recipe 上方那一行英文註解就是
    `just --list` 顯示的說明,保持一行。
 
 **root `justfile`**(就是這個形狀,沒有別的 recipe;`justfile.ci` 不存在):
