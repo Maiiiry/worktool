@@ -2739,7 +2739,7 @@ STUB
 @test "#513: automated restore needs no terminal prompt" {
     _realbox_quiet 5.2.1
     _realbox_quiet 5.2.2
-    # Apply has installed the private process shadow before we wrap REALBOX.
+    # Apply has installed the private proc-root seam before we wrap REALBOX.
     export ORIGINAL_REALBOX="${REALBOX}" RESTORE_STDERR="${STATE}/restore-stderr"
     cat >"${STATE}/restore-with-stderr" <<'STUB'
 #!/usr/bin/env bash
@@ -3751,27 +3751,56 @@ _assert_52_kept_evidence_stderr() {
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == /proc/5556/cwd && -e "${FAKE_STATE_DIR}/cleanup-ready" ]]; then
-    mkdir -p "${FAKE_STATE_DIR}/gone"
-    touch "${FAKE_STATE_DIR}/gone/5556"
+    rm -rf "${FAKE_STATE_DIR}/proc/5556"
     exit "${FAKE_VANISHED_RC}"
 fi
 exec "${FAKE_STATE_DIR}/vanished-readlink" "$@"
 STUB
     local probe_rc
     for probe_rc in 1 137; do
-        rm -f "${STATE}/cleanup-ready" "${STATE}/gone/5556" "${STATE}/closed"
+        rm -f "${STATE}/cleanup-ready" "${STATE}/closed"
+        mkdir -p "${STATE}/proc/5556"
         _realbox_quiet 5.2.1
         FAKE_VANISHED_RC="${probe_rc}" run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
         assert_success
         [[ "${stderr}" != *'kept evidence='* ]]
-        [ -e "${STATE}/gone/5556" ]
+        [ ! -e "${STATE}/proc/5556" ]
         assert_equal "$(cat "${STATE}/closed")" '-HUP -- -4240'
         run find "$(_backup_dir)" -maxdepth 1 -name 'window.*'
         assert_success
         assert_output ''
-        rm -f "${STATE}/cleanup-ready" "${STATE}/gone/5556"
+        rm -f "${STATE}/cleanup-ready"
+        mkdir -p "${STATE}/proc/5556"
         _realbox_quiet 5.2.3
     done
+}
+
+@test "#700: a failed process existence check after a cwd probe failure stays undetermined" {
+    _cleanup_cwd_tools
+    cp "${STUBS}/readlink" "${STATE}/existence-readlink"
+    cat >"${STUBS}/readlink" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == /proc/5556/cwd && -e "${FAKE_STATE_DIR}/cleanup-ready" ]]; then
+    rm -rf "${FAKE_STATE_DIR}/proc/5556" "${FAKE_STATE_DIR}/proc/self"
+    exit 1
+fi
+exec "${FAKE_STATE_DIR}/existence-readlink" "$@"
+STUB
+    _realbox_quiet 5.2.1
+    run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+    assert_failure 1
+    local directory
+    directory="$(find "$(_backup_dir)" -maxdepth 1 -type d -name 'window.*')"
+    [ -d "${directory}" ]
+    [ -f "${directory}/before" ]
+    [ ! -e "${STATE}/proc/5556" ]
+    [ ! -e "${STATE}/proc/self" ]
+    _assert_52_kept_evidence_stderr "${directory}"
+    mkdir -p "${STATE}/proc/self" "${STATE}/proc/5556"
+    rm -rf -- "${directory}"
+    rm -f "${STATE}/cleanup-ready"
+    _realbox_quiet 5.2.3
 }
 
 @test "#700: a deadline-interrupted cleanup scan retains evidence and fails" {
@@ -3813,8 +3842,7 @@ STUB
 set -euo pipefail
 if [[ "$*" == /proc/5556/cwd && -e "${FAKE_STATE_DIR}/cleanup-ready"
     && -e "${FAKE_STATE_DIR}/closed" ]]; then
-    mkdir -p "${FAKE_STATE_DIR}/gone"
-    touch "${FAKE_STATE_DIR}/gone/5556"
+    rm -rf "${FAKE_STATE_DIR}/proc/5556"
     read -r now <"${FAKE_STATE_DIR}/clock"
     printf '%s\n' "$((now + 5))" >"${FAKE_STATE_DIR}/clock"
     exit 1
@@ -3823,7 +3851,8 @@ exec "${FAKE_STATE_DIR}/deadline-readlink" "$@"
 STUB
     local row_order directory
     for row_order in last middle; do
-        rm -f "${STATE}/cleanup-ready" "${STATE}/gone/5556" "${STATE}/closed"
+        rm -f "${STATE}/cleanup-ready" "${STATE}/closed"
+        mkdir -p "${STATE}/proc/5556"
         _realbox_quiet 5.2.1
         FAKE_SWEEP_ROW_ORDER="${row_order}" run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
         assert_failure 1
@@ -3832,7 +3861,7 @@ STUB
         [ -f "${directory}/before" ]
         _assert_52_kept_evidence_stderr "${directory}"
         [[ "${stderr}" != *'window ownership undetermined'* ]]
-        [ -e "${STATE}/gone/5556" ]
+        [ ! -e "${STATE}/proc/5556" ]
         assert_equal "$(cat "${STATE}/closed")" '-HUP -- -4240'
         rm -rf -- "${directory}"
         rm -f "${STATE}/cleanup-ready"

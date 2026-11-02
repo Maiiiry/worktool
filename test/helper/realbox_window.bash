@@ -32,6 +32,20 @@ _private_window_script() {
     cp -a "${source_repo}/justfile" "${source_repo}/lib" "${source_repo}/script" \
         "${source_repo}/box" "${repo}/"
     REALBOX="${repo}/script/verify/realbox.sh"
+    # Rewrite exactly one constant; keep the shipped classification function.
+    local line matches=0
+    : >"${REALBOX}.new"
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+        if [[ "${line}" == '_52_PROC_ROOT=/proc' ]]; then
+            printf '%s\n' '_52_PROC_ROOT="${FAKE_STATE_DIR}/proc"' >>"${REALBOX}.new"
+            matches=$((matches + 1))
+        else
+            printf '%s\n' "${line}" >>"${REALBOX}.new"
+        fi
+    done <"${REALBOX}"
+    [[ "${matches}" -eq 1 ]] || return 1
+    cat "${REALBOX}.new" >"${REALBOX}"
+    rm -f "${REALBOX}.new"
 }
 
 _prepare_realbox_tools() {
@@ -165,14 +179,9 @@ _auto_window_tools() {
 _auto_window_ipc() {
     # Wrappers must delegate to a script that already has the private seam.
     if [[ "${REALBOX}" == */script/verify/realbox.sh ]]; then
-        _private_window_script
-        # Fake PIDs must never consult the container's real /proc entries.
-        _insert_before '_52_window_root() {' "${REALBOX}" <<'FRAG'
-_52_process_gone() {
-    [[ -e "${FAKE_STATE_DIR}/gone/$1" ]]
-}
-FRAG
+        _private_window_script || return 1
     fi
+    mkdir -p "${FAKE_STATE_DIR}/proc/"{self,1,900,4240,4242,4344,5556,6000,800}
     cp "${STUBS}/ps" "${STATE}/auto-ps"
     cp "${STUBS}/readlink" "${STATE}/auto-readlink"
     rm -f "${STUBS}/ghostty"

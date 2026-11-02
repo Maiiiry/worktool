@@ -716,6 +716,9 @@ item_51() {
 # 5.2  ghostty window chain: back up, apply, confirm, restore
 # =============================================================================
 
+# Overridable only by specs editing a private copy of this script.
+_52_PROC_ROOT=/proc
+
 # --- step 1 ------------------------------------------------------------------
 # A restored managed command can correctly enter an existing box, which cannot
 # satisfy the host-window evidence. Refuse that baseline before any writes.
@@ -864,10 +867,10 @@ _52_process_snapshot() {
     done <<<"${_52_ROWS}"
 }
 
-# A process whose /proc entry is gone after a failed probe cannot be an
-# open window; a reused PID shows as present and stays undetermined.
+# Gone only when /proc answers for ourselves but not for the PID; any
+# lookup failure stays undetermined. A reused PID shows as present.
 _52_process_gone() {
-    [[ ! -e "/proc/$1" ]]
+    [[ -e "${_52_PROC_ROOT}/self" && ! -e "${_52_PROC_ROOT}/$1" ]]
 }
 
 # Return 0 for owned, 1 for definitely not owned, 2 for undetermined.
