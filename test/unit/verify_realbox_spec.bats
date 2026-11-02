@@ -1482,6 +1482,9 @@ STUB
 
 @test "#433: 5.2 passes with a new fish in this runs dev namespace" {
     _fake_window_process
+    # Namespace verdicts must not depend on scheduler time at the discovery deadline.
+    # Deadline and undetermined ownership behavior have dedicated #700 coverage.
+    _control_window_clock
     run _window_input 4242
     assert_equal "$(cat "${STATE}/window-rc")" "0"
     assert_output --partial "window-evidence: pid=4242 comm=fish host=mnt:[100] window=mnt:[200] dev=mnt:[200]"
