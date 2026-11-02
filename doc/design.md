@@ -212,7 +212,11 @@ recipe 原文,也是 `just` 執行時回顯的那一行):
 | 指令 | 轉發到 |
 |------|--------|
 | `just box` | 列出 box 的動詞:`@just --justfile '{{source_file()}}' --list` |
-| `just box assemble [args]` | `./script/box/assemble.sh "$@"`(args:`--dry-run`、`--file <manifest>`、`--help`) |
+| `just box assemble [args]` | `./script/box/assemble.sh "$@"`(args:`--file <manifest>`、`--home <path>`、`--dry-run`、`-h` / `--help`) |
+| `just box bench [args]` | `./script/box/bench.sh "$@"`(args:`--box NAME`、`--runs N`、`--warmup N`、`--max-ms N`、`--json`、`--shell CMD`、`--max-wait N`、`-h` / `--help`) |
+| `just box setup [args]` | `./script/box/setup.sh "$@"`(args:`--auto-enter yes\|no`、`--terminal ghostty\|none`、`--box <name>`、`--distrobox <path>`、`--dry-run`、`-h` / `--help`) |
+| `just box status [args]` | `./script/box/status.sh "$@"`(args:`-h` / `--help`) |
+| `just box enter [args]` | `./script/box/enter.sh "$@"`(args:`--box <name>`、`--distrobox <path>`、`--timeout <seconds>`、`-- <command>...`、`-h` / `--help`) |
 | `just box help` / `just box h` | 依序執行 `assemble.sh`、`bench.sh`、`setup.sh`、`status.sh`、`enter.sh` 的 `--help` |
 
 **M2 腳本搬移示意**(以下只列當時的 `test`、`box`,不是目前完整的 namespace 或腳本清單;
