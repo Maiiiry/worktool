@@ -3724,6 +3724,32 @@ STUB
     [ ! -e "${STATE}/closed" ]
 }
 
+@test "#700: an undetermined ownership probe cannot become successful apply or restore evidence" {
+    _auto_window_tools
+    _control_window_clock
+    cp "${STUBS}/readlink" "${STATE}/once-readlink"
+    cat >"${STUBS}/readlink" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == /proc/4240/cwd && ! -e "${FAKE_STATE_DIR}/cwd-probed" ]]; then
+    touch "${FAKE_STATE_DIR}/cwd-probed"
+    exit 137
+fi
+exec "${FAKE_STATE_DIR}/once-readlink" "$@"
+STUB
+    _realbox_quiet 5.2.1
+    local step
+    for step in 5.2.2 5.2.3; do
+        rm -f "${STATE}/cwd-probed"
+        run "${REALBOX}" --allow-real-box "${step}" </dev/null
+        assert_failure 3
+        assert_output --partial 'window ownership undetermined; acceptance inconclusive'
+        refute_output --partial 'window-evidence:'
+        run find "$(_backup_dir)" -maxdepth 1 -name 'window.*'
+        assert_output ''
+    done
+}
+
 @test "#663: failed cleanup inventories preserve owned window evidence" {
     _auto_window_tools
     cp "${STUBS}/ps" "${STATE}/cleanup-ps"
