@@ -736,7 +736,9 @@ STUB
 }
 
 _run_cleanup_fault() {
-    run --separate-stderr setsid bash -c '
+    cat >"${MATRIX_STATE}/cleanup-harness" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
         source "${LIB_DIR}/log.sh"
         source "${LIB_DIR}/realbox_interrupt.sh"
         _54_W="${MATRIX_STATE}/cleanup-evidence"
@@ -753,7 +755,8 @@ _run_cleanup_fault() {
         _54_cleanup || rc=$?
         printf "%s\n" "${_54_PID}" >"${MATRIX_STATE}/remaining-pid"
         exit "${rc}"
-    ' bash "$@"
+STUB
+    run --separate-stderr setsid bash "${MATRIX_STATE}/cleanup-harness" "$@"
 }
 
 @test "#696: cleanup wait timeout keeps evidence and PID with recovery diagnostics" {
