@@ -957,7 +957,10 @@ _52_ownership_unknown() {
     log_warn "window ownership undetermined; acceptance inconclusive"
 }
 
-# Return 2 when there is no candidate yet; preserve evidence failures verbatim.
+# Return 2 for no candidate, or 3 after _52_ownership_unknown logs an
+# undetermined restore ownership probe; preserve evidence failures verbatim.
+# In apply mode, assign the last non-fish login wrapper to _52_find_window's
+# local nonfish variable through Bash dynamic scoping.
 _52_scan_shells() {
     local mode="$1" apply_root="$2" pid parent comm root rc
     while read -r pid parent comm; do
