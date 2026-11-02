@@ -646,26 +646,6 @@ _repo_copy() {
     printf '%s\n' "${_dst}"
 }
 
-# Insert the lines on stdin into file $2 immediately before its first line
-# equal to $1, so a later definition of a shell function shadows the shipped
-# one. Pure bash; the result is copied back INTO the file so it keeps its
-# executable bit.
-_insert_before() {
-    local _anchor="$1" _file="$2" _frag _line _done=0
-    _frag="$(cat)"
-    : >"${_file}.new"
-    while IFS= read -r _line || [ -n "${_line}" ]; do
-        if [ "${_done}" -eq 0 ] && [ "${_line}" = "${_anchor}" ]; then
-            printf '%s\n' "${_frag}" >>"${_file}.new"
-            _done=1
-        fi
-        printf '%s\n' "${_line}" >>"${_file}.new"
-    done <"${_file}"
-    [ "${_done}" -eq 1 ] || return 1
-    cat "${_file}.new" >"${_file}"
-    rm -f "${_file}.new"
-}
-
 # Only the distrobox isolation write overwrites user content.
 _degrade_distrobox_overwrites() {
     _insert_before 'setup_run() {' "$1/script/box/setup.sh" <<'FRAG'
@@ -2759,6 +2739,7 @@ STUB
 @test "#513: automated restore needs no terminal prompt" {
     _realbox_quiet 5.2.1
     _realbox_quiet 5.2.2
+    # Apply has installed the private process shadow before we wrap REALBOX.
     export ORIGINAL_REALBOX="${REALBOX}" RESTORE_STDERR="${STATE}/restore-stderr"
     cat >"${STATE}/restore-with-stderr" <<'STUB'
 #!/usr/bin/env bash
@@ -3713,6 +3694,36 @@ STUB
     done
 }
 
+@test "#700: a cleanup cwd probe failure on a vanished process is not undetermined" {
+    _cleanup_cwd_tools
+    cp "${STUBS}/readlink" "${STATE}/vanished-readlink"
+    cat >"${STUBS}/readlink" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == /proc/5556/cwd && -e "${FAKE_STATE_DIR}/cleanup-ready" ]]; then
+    mkdir -p "${FAKE_STATE_DIR}/gone"
+    touch "${FAKE_STATE_DIR}/gone/5556"
+    exit "${FAKE_VANISHED_RC}"
+fi
+exec "${FAKE_STATE_DIR}/vanished-readlink" "$@"
+STUB
+    local probe_rc
+    for probe_rc in 1 137; do
+        rm -f "${STATE}/cleanup-ready" "${STATE}/gone/5556" "${STATE}/closed"
+        _realbox_quiet 5.2.1
+        FAKE_VANISHED_RC="${probe_rc}" run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+        assert_success
+        [[ "${stderr}" != *'kept evidence='* ]]
+        [ -e "${STATE}/gone/5556" ]
+        assert_equal "$(cat "${STATE}/closed")" '-HUP -- -4240'
+        run find "$(_backup_dir)" -maxdepth 1 -name 'window.*'
+        assert_success
+        assert_output ''
+        rm -f "${STATE}/cleanup-ready" "${STATE}/gone/5556"
+        _realbox_quiet 5.2.3
+    done
+}
+
 @test "#700: a deadline-interrupted cleanup scan retains evidence and fails" {
     _cleanup_cwd_tools
     _control_window_clock
@@ -4000,10 +4011,9 @@ STUB
 # Replace only Bash's clock in a private script copy. All deadline arithmetic
 # and ownership decisions remain shipped code; subprocesses share logical time.
 _control_window_clock() {
-    local repo clock_expression
+    local clock_expression
     export FAKE_CLOCK_DELAY="${1:-0}"
-    repo="$(_repo_copy)"
-    REALBOX="${repo}/script/verify/realbox.sh"
+    _private_window_script
     printf '0\n' >"${STATE}/clock"
     clock_expression="\$(<\"\${FAKE_STATE_DIR}/clock\")"
     sed -i "s|SECONDS|${clock_expression}|g" "${REALBOX}"

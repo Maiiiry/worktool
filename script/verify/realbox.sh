@@ -864,6 +864,12 @@ _52_process_snapshot() {
     done <<<"${_52_ROWS}"
 }
 
+# A process whose /proc entry is gone after a failed probe cannot be an
+# open window; a reused PID shows as present and stays undetermined.
+_52_process_gone() {
+    [[ ! -e "/proc/$1" ]]
+}
+
 # Return 0 for owned, 1 for definitely not owned, 2 for undetermined.
 _52_window_root() {
     local pid="$1" parent cwd depth
@@ -873,7 +879,10 @@ _52_window_root() {
         parent="${_52_PARENTS[${pid}]:-0}"
         [[ "${parent}" =~ ^[1-9][0-9]*$ && "${parent}" != "${pid}" ]] || return 1
         if [[ "${_52_COMMS[${parent}]:-}" == ghostty ]]; then
-            cwd="$(timeout -s KILL 1 readlink "/proc/${pid}/cwd" 2>/dev/null)" || return 2
+            cwd="$(timeout -s KILL 1 readlink "/proc/${pid}/cwd" 2>/dev/null)" || {
+                _52_process_gone "${pid}" && return 1
+                return 2
+            }
             (( SECONDS < ${_52_DEADLINE:-SECONDS+1} )) || return 2
             if [[ "${cwd}" == "${_52_WINDOW_DIR}" ]] && ! grep -qE "^[[:space:]]*${pid}[[:space:]]" "${_52_WINDOW_DIR}/before"; then
                 printf '%s\n' "${pid}"

@@ -2,6 +2,38 @@
 REALBOX_FAKED_TOOLS=(distrobox just gh jq loginctl)
 REALBOX_SHIMMED_TOOLS=(mkdir grep cut wc sort sha256sum readlink tee mktemp id date uname cp mv rm awk)
 
+# Insert the lines on stdin into file $2 immediately before its first line
+# equal to $1, so a later definition of a shell function shadows the shipped
+# one. Pure bash; the result is copied back INTO the file so it keeps its
+# executable bit.
+_insert_before() {
+    local _anchor="$1" _file="$2" _frag _line _done=0
+    _frag="$(cat)"
+    : >"${_file}.new"
+    while IFS= read -r _line || [ -n "${_line}" ]; do
+        if [ "${_done}" -eq 0 ] && [ "${_line}" = "${_anchor}" ]; then
+            printf '%s\n' "${_frag}" >>"${_file}.new"
+            _done=1
+        fi
+        printf '%s\n' "${_line}" >>"${_file}.new"
+    done <"${_file}"
+    [ "${_done}" -eq 1 ] || return 1
+    cat "${_file}.new" >"${_file}"
+    rm -f "${_file}.new"
+}
+
+# Both the clock and process-existence seams reuse this private script copy.
+_private_window_script() {
+    [[ "${REALBOX}" == */script/verify/realbox.sh ]] || return 0
+    local source_repo="${REALBOX%/script/verify/realbox.sh}"
+    local repo="${BATS_TEST_TMPDIR}/window-repo"
+    [[ "${REALBOX}" != "${repo}/script/verify/realbox.sh" ]] || return 0
+    mkdir -p "${repo}"
+    cp -a "${source_repo}/justfile" "${source_repo}/lib" "${source_repo}/script" \
+        "${source_repo}/box" "${repo}/"
+    REALBOX="${repo}/script/verify/realbox.sh"
+}
+
 _prepare_realbox_tools() {
     REALBOX="${REPO_ROOT}/script/verify/realbox.sh"
     STATE="${BATS_TEST_TMPDIR}/state"
@@ -131,6 +163,16 @@ _auto_window_tools() {
 
 
 _auto_window_ipc() {
+    # Wrappers must delegate to a script that already has the private seam.
+    if [[ "${REALBOX}" == */script/verify/realbox.sh ]]; then
+        _private_window_script
+        # Fake PIDs must never consult the container's real /proc entries.
+        _insert_before '_52_window_root() {' "${REALBOX}" <<'FRAG'
+_52_process_gone() {
+    [[ -e "${FAKE_STATE_DIR}/gone/$1" ]]
+}
+FRAG
+    fi
     cp "${STUBS}/ps" "${STATE}/auto-ps"
     cp "${STUBS}/readlink" "${STATE}/auto-readlink"
     rm -f "${STUBS}/ghostty"
