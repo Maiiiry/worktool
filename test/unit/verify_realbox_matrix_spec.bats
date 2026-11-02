@@ -740,35 +740,63 @@ _matrix_cleanup_fault() {
     _matrix_child_stub
     sed -i "s/^trap .* TERM$/trap '' TERM/" "${MATRIX_STATE}/child"
     sed -i '/^touch /i\    printf "resident-ready\\n" >>"${TMPDIR}/capture"' "${MATRIX_STATE}/child"
-    # The process-group adapter cannot deliver either TERM or emergency KILL.
-    cat >>"${MATRIX_STATE}/repo/lib/verify_run.sh" <<'STUB'
-verify_stop_group() { return 1; }
-STUB
+    # Simulate undelivered signals at the adapter, with an independent result.
+    printf 'verify_stop_group() { return %s; }\n' "$1" \
+        >>"${MATRIX_STATE}/repo/lib/verify_run.sh"
 }
 
 _matrix_assert_recovery() {
-    local pid evidence
+    local pid evidence survivor
     read -r pid <"${MATRIX_STATE}/child.pid"
+    survivor="${pid}"
+    if [[ -f "${MATRIX_STATE}/resident.pid" ]]; then
+        read -r survivor <"${MATRIX_STATE}/resident.pid"
+    fi
     evidence=("${TMPDIR}"/wt-m3-54.*/cleanup.pid)
     [ -f "${evidence[0]}" ]
     [ "$(cat "${evidence[0]}")" = "${pid}" ]
     evidence="${evidence[0]%/cleanup.pid}"
     [ -f "${evidence}/assemble-INT/comments-before" ]
     [ "$(cat "${evidence}/assemble-INT/capture")" = resident-ready ]
-    kill -0 "${pid}"
+    kill -0 "${survivor}"
     [[ "${stderr}" == *"kept evidence=${evidence};"* ]]
     [[ "${stderr}" == *"pid-record=${evidence}/cleanup.pid;"* ]]
-    [[ "${stderr}" == *"surviving process: pid=${pid} "* ]]
+    [[ "${stderr}" == *"surviving process: pid=${survivor} "* ]]
     [[ "${stderr}" == *"manual recovery:"* ]]
     assert_line 'exit-signal=none'
     assert_line 'rc=1'
 }
 
 @test "#696: interrupted supervisor preserves recovery evidence for a live timed-out child" {
-    _matrix_cleanup_fault
+    _matrix_cleanup_fault 0
     run --separate-stderr node "${BATS_TEST_DIRNAME}/fixture/verify_signal.js" TERM bash \
         "${REALBOX}" --allow-real-box 5.4
     assert_success
     _matrix_assert_recovery
     [[ "${stderr}" == *'interrupt cleanup: child reap wait deadline exceeded'* ]]
+}
+
+@test "#696: interrupted supervisor preserves recovery evidence when a resident cannot be stopped" {
+    _matrix_cleanup_fault 1
+    # The leader terminates normally; its TERM-ignoring resident survives.
+    sed -i '/^sleep "${MATRIX_READY_DELAY/,$d' "${MATRIX_STATE}/child"
+    cat >>"${MATRIX_STATE}/child" <<'STUB'
+trap 'exit 143' TERM
+bash -c 'trap "" TERM; touch "${MATRIX_STATE}/resident-ready"; exec sleep 10' &
+printf '%s\n' "$!" >"${MATRIX_STATE}/resident.pid"
+printf 'resident-ready\n' >>"${TMPDIR}/capture"
+# Publish only once the resident has installed its ignored signal disposition.
+deadline=$((SECONDS + 3))
+while [[ ! -e "${MATRIX_STATE}/resident-ready" ]]; do
+    ((SECONDS < deadline)) || exit 1
+    sleep 0.01
+done
+touch "${SIGNAL_STATE}/ready"
+wait "$!"
+STUB
+    run --separate-stderr node "${BATS_TEST_DIRNAME}/fixture/verify_signal.js" TERM bash \
+        "${REALBOX}" --allow-real-box 5.4
+    assert_success
+    _matrix_assert_recovery
+    [[ "${stderr}" != *'child reap wait deadline exceeded'* ]]
 }
