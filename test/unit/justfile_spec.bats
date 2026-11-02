@@ -5,7 +5,7 @@
 #   The just layer follows ycpss91255-docker/base (ADR-00000005/10/11):
 #
 #   - zero special cases: the root justfile is action `mod?` lines
-#     (test, box, verify, agent, worktree) plus a `default` that lists them - no other recipe;
+#     (test, box, verify, agent, worktree, job) plus a `default` that lists them - no other recipe;
 #   - action-named namespaces: script/test/justfile.test and
 #     script/box/justfile.box, each with its own `default`, `help` (alias
 #     `h`) and `set working-directory := '../..'`, so every recipe runs at
@@ -127,6 +127,61 @@ _listed_names() {
     printf '%s\n' "${lines[@]}" | sed -nE 's/^ +([A-Za-z_-]+).*$/\1/p' | sort | tr '\n' ' '
 }
 
+# Check command rows against the public listing: mod? lines + just --dump JSON.
+_command_row_gaps() {
+    local dump modules listing
+    if ! dump=$(just --justfile "${1}/justfile" --dump --dump-format json); then
+        printf 'command-row check: just --dump failed\n' >&2
+        return 1
+    fi
+    if ! modules=$(awk '/^mod\?[[:space:]]+/ { print $2 }' "${1}/justfile"); then
+        printf 'command-row check: module listing failed\n' >&2
+        return 1
+    fi
+    if ! listing=$(jq -er --arg modules "${modules}" '
+        def commands($prefix):
+            ((.recipes | to_entries[] | select(.value.private != true) | .key),
+             (.aliases | keys[])) |
+            $prefix + (if . == "default" then "" else " " + . end);
+        . as $dump |
+        [commands("just"),
+         ($modules | split("\n")[] | select(length > 0) | . as $ns |
+          if ($dump.modules | has($ns)) then
+              $dump.modules[$ns] | commands("just " + $ns)
+          else
+              "module not loaded: " + $ns
+          end)] | join("\n")
+    ' <<<"${dump}"); then
+        printf 'command-row check: JSON listing failed\n' >&2
+        return 1
+    fi
+    awk '
+        FILENAME != "-" {
+            if (!/^\| `just/) next
+            split($0, cells, "|")
+            count = split(cells[2], spans, "`")
+            for (i = 2; i <= count; i += 2) {
+                command = spans[i]
+                sub(/ [\[<].*$/, "", command)
+                documented[command] = 1
+            }
+            next
+        }
+        /^module not loaded: / {
+            print
+            missing = 1
+            next
+        }
+        NF {
+            if (!($0 in documented)) {
+                print "missing command row: " $0
+                missing = 1
+            }
+        }
+        END { exit missing }
+    ' "${1}/doc/structure.md" - <<<"${listing}"
+}
+
 # --- the tool itself ---------------------------------------------------------
 
 @test "just is installed in the test image and reports a semver" {
@@ -158,6 +213,51 @@ _listed_names() {
     assert_line --index 5 --regexp "^mod\\? job +'.agents/script/justfile\\.job'$"
     assert_line --index 6 "default:"
     assert_line --index 7 --regexp '^[[:space:]]+@just --list$'
+}
+
+# Print each root module with its doc comment in declaration order.
+_root_mod_comments() {
+    awk '
+        /^# / { comment = substr($0, 3) }
+        /^mod[?] / { print $1, $2, $3, "# " comment }
+        # Only adjacent doc comments belong to a module; clear after printing it.
+        !/^# / { comment = "" }
+    ' "$1"
+}
+
+@test "#701: root module comments do not carry across blank lines or recipe code" {
+    local _fixture="${BATS_TEST_TMPDIR}/justfile.comments"
+    cat >"${_fixture}" <<'EOF'
+# First doc.
+mod? a 'a/justfile.a'
+
+mod? b 'b/justfile.b'
+default:
+    @just --list
+mod? c 'c/justfile.c'
+EOF
+    run _root_mod_comments "${_fixture}"
+    assert_success
+    assert_equal "${#lines[@]}" 3
+    assert_line --index 0 "mod? a 'a/justfile.a' # First doc."
+    assert_line --index 1 "mod? b 'b/justfile.b' # "
+    assert_line --index 2 "mod? c 'c/justfile.c' # "
+}
+
+@test "#701: design root justfile block matches namespace names, paths and doc comments in order" {
+    local _actual
+    _actual="$(_root_mod_comments "${REPO_ROOT}/justfile")"
+    run awk '
+        /^```just$/ { block = 1; next }
+        block && /^```$/ { exit }
+        block && /^mod[?] / {
+            comment = $0
+            sub(/^[^#]*# /, "", comment)
+            print $1, $2, $3, "# " comment
+        }
+    ' "${REPO_ROOT}/doc/design.md"
+    assert_success
+    assert_output "${_actual}"
 }
 
 @test "the namespace justfiles live next to their scripts and run from the repo root" {
@@ -352,6 +452,48 @@ _listed_names() {
     assert_equal "$(_last_argc)" "1"
 }
 
+@test "#702: structure documents every public recipe and alias of every root mod" {
+    run _command_row_gaps "${REPO_ROOT}"
+    assert_success
+}
+
+@test "#702: command-table check flags an undocumented recipe with a dependency" {
+    mkdir -p "${COPY}/doc"
+    cp "${REPO_ROOT}/doc/structure.md" "${COPY}/doc/structure.md"
+    cat >>"${COPY}/script/box/justfile.box" <<'EOF'
+
+# Probe documentation coverage for a recipe with a dependency.
+deps-probe: status
+    @true
+EOF
+    run _command_row_gaps "${COPY}"
+    assert_failure
+    assert_line 'missing command row: just box deps-probe'
+}
+
+@test "#702: command-table check flags every recipe of an added root mod" {
+    mkdir -p "${COPY}/doc" "${COPY}/script/extra"
+    cp "${REPO_ROOT}/doc/structure.md" "${COPY}/doc/structure.md"
+    cat >>"${COPY}/justfile" <<'EOF'
+
+# Extra actions for documentation coverage.
+mod? extra 'script/extra/justfile.extra'
+EOF
+    cat >"${COPY}/script/extra/justfile.extra" <<'EOF'
+set working-directory := '../..'
+
+default:
+    @just --justfile script/extra/justfile.extra --list
+
+run *args:
+    @true
+EOF
+    run _command_row_gaps "${COPY}"
+    assert_failure
+    assert_line 'missing command row: just extra'
+    assert_line 'missing command row: just extra run'
+}
+
 @test "#561: structure renders every public just command row inside a table" {
     run awk '
         /^\| 指令 \| 實際執行 \|$/ { header = 1; next }
@@ -367,6 +509,16 @@ _listed_names() {
         END { exit (invalid || !rows) }
     ' "${REPO_ROOT}/doc/structure.md"
     assert_success
+}
+
+@test "#702: structure directory tree lists the verify namespace and its scripts" {
+    run sed -n '/^│   ├── verify\//,/^│   └── box\//p' "${REPO_ROOT}/doc/structure.md"
+    assert_success
+    assert_output --partial 'justfile.verify'
+    local _script
+    for _script in "${REPO_ROOT}"/script/verify/*.sh; do
+        assert_output --partial "${_script##*/}"
+    done
 }
 
 @test "#446: README and structure describe an independent HOME fixed at box creation" {
