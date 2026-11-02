@@ -3675,6 +3675,57 @@ STUB
     [ -f "$(_backup_dir)/manifest" ]
 }
 
+_assert_52_kept_evidence_stderr() {
+    local directory="$1" doc="${2:-${REPO_ROOT}/doc/acceptance.md}"
+    local expected selected="" line
+    expected="$(awk '
+        /^  - \[ \] 5\.2 開終端/ {section=1}
+        /^  - \[ \] 5\.3 / {section=0}
+        section && $0 == "      ```text stderr" {block=1; blocks++; next}
+        section && block && $0 == "      ```" {block=0; closed++; next}
+        section && block {
+            sub(/^      /, "")
+            lines[++count]=$0
+        }
+        END {
+            if (blocks != 1 || closed != 1 || count != 2) exit 1
+            print lines[1]
+            print lines[2]
+        }' "${doc}")" || return 1
+    expected="${expected//'<本輪 window.* 目錄>'/"${directory}"}"
+    while IFS= read -r line; do
+        if [[ "${line}" == *'kept evidence='* || "${line}" == *'manual check:'* ]]; then
+            selected+="${selected:+$'\n'}${line}"
+        fi
+    done <<<"${stderr}"
+    assert_equal "${selected}" "${expected}"
+}
+
+@test "#700: kept-evidence stderr comparison rejects a changed doc line and extra prefixes or suffixes" {
+    local directory="${BATS_TEST_TMPDIR}/window.literal.dots"
+    local doc="${BATS_TEST_TMPDIR}/acceptance-mutated.md" guidance warning
+    warning="[WARN] cannot safely close owned window; keeping ownership evidence; kept evidence=${directory}"
+    guidance="[WARN] manual check: inspect ${directory}/before and process cwd/ancestry; confirm the owned window is closed, save evidence, then remove ${directory} and retry 5.2.3"
+    local captured_stderr="${warning}"$'\n'"${guidance}"
+    stderr="${captured_stderr}" run _assert_52_kept_evidence_stderr "${directory}"
+    assert_success
+
+    sed 's/keeping ownership evidence/keeping changed ownership evidence/' \
+        "${REPO_ROOT}/doc/acceptance.md" >"${doc}"
+    stderr="${captured_stderr}" run _assert_52_kept_evidence_stderr "${directory}" "${doc}"
+    assert_failure
+
+    local changed_stderr
+    for changed_stderr in \
+        "prefix ${warning}"$'\n'"${guidance}" \
+        "${warning} suffix"$'\n'"${guidance}" \
+        "${warning}"$'\n'"prefix ${guidance}" \
+        "${warning}"$'\n'"${guidance} suffix"; do
+        stderr="${changed_stderr}" run _assert_52_kept_evidence_stderr "${directory}"
+        assert_failure
+    done
+}
+
 @test "#700: cleanup cwd probe failure retains evidence and fails with manual guidance" {
     _cleanup_cwd_tools
     local mode directory
@@ -3685,8 +3736,7 @@ STUB
         assert_failure 1
         directory="$(cat "${STATE}/window-directory")"
         [ -f "${directory}/before" ]
-        [[ "${stderr}" == *"kept evidence=${directory}"* ]]
-        [[ "${stderr}" == *'manual check:'* ]]
+        _assert_52_kept_evidence_stderr "${directory}"
         [ ! -e "${STATE}/closed" ]
         rm -f "${STATE}/window-directory" "${STATE}/cleanup-ready"
         rm -rf -- "${directory}"
@@ -3733,8 +3783,7 @@ STUB
     local directory
     directory="$(cat "${STATE}/window-directory")"
     [ -f "${directory}/before" ]
-    [[ "${stderr}" == *"kept evidence=${directory}"* ]]
-    [[ "${stderr}" == *'manual check:'* ]]
+    _assert_52_kept_evidence_stderr "${directory}"
     [ ! -e "${STATE}/closed" ]
 }
 
@@ -3781,7 +3830,7 @@ STUB
         directory="$(find "$(_backup_dir)" -maxdepth 1 -type d -name 'window.*')"
         [ -d "${directory}" ]
         [ -f "${directory}/before" ]
-        [[ "${stderr}" == *"kept evidence=${directory}"* ]]
+        _assert_52_kept_evidence_stderr "${directory}"
         [[ "${stderr}" != *'window ownership undetermined'* ]]
         [ -e "${STATE}/gone/5556" ]
         assert_equal "$(cat "${STATE}/closed")" '-HUP -- -4240'
@@ -3844,8 +3893,7 @@ STUB
     local directory
     directory="$(cat "${STATE}/window-directory")"
     [ -f "${directory}/before" ]
-    [[ "${stderr}" == *"kept evidence=${directory}"* ]]
-    [[ "${stderr}" == *'manual check:'* ]]
+    _assert_52_kept_evidence_stderr "${directory}"
     [ ! -e "${STATE}/closed" ]
 }
 
