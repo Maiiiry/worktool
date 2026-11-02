@@ -406,6 +406,16 @@ _listed_names() {
     assert_success
 }
 
+@test "#702: structure directory tree lists the verify namespace and its scripts" {
+    run sed -n '/^│   ├── verify\//,/^│   └── box\//p' "${REPO_ROOT}/doc/structure.md"
+    assert_success
+    assert_output --partial 'justfile.verify'
+    local _script
+    for _script in "${REPO_ROOT}"/script/verify/*.sh; do
+        assert_output --partial "${_script##*/}"
+    done
+}
+
 @test "#446: README and structure describe an independent HOME fixed at box creation" {
     local _doc
     for _doc in README.md doc/structure.md; do

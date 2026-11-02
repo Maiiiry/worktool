@@ -27,6 +27,16 @@ worktool/
 │   │   │                        (無旗標 = 全部依序跑);容器內以 --ci-* 跑真正的 gate
 │   │   ├── selfcheck.sh         一鍵自檢(使用者 clone 後執行;dry-run 契約 + 無效清單拒絕)
 │   │   └── system-real-entry.sh DinD runner 入口:起巢狀 dockerd、等就緒、跑 real-engine 組、清理
+│   ├── verify/         驗收群組(just verify ...；裸命令只列清單)
+│   │   ├── justfile.verify     `verify` 命名空間:列群組、薄轉發與各腳本 help
+│   │   ├── all.sh              依序驗收 ui / gate / setup / diagram / evidence，遇錯即停
+│   │   ├── ui.sh               1.1：box 命名空間介面
+│   │   ├── gate.sh             2.1–2.4：自動化 gate、TDD 證據與負向案例
+│   │   ├── setup.sh            3.1–3.13：暫存 HOME 下的設定與狀態
+│   │   ├── diagram.sh          4.1：draw.io SVG 與 README 引用
+│   │   ├── realbox.sh          5.1–5.4 與 5.2 分步：需明確授權的實機驗收
+│   │   ├── config_backup_paths.sh  實機驗收的設定備份路徑共用 helper
+│   │   └── evidence.sh         6.1–6.3：外部 CI 與流程證據
 │   └── box/             dev 盒生命週期(just box ...)
 │       ├── justfile.box         `box` 命名空間:薄轉發到 assemble.sh / bench.sh / setup.sh / status.sh / enter.sh
 │       ├── assemble.sh          從清單 assemble dev 盒的薄包裝器(--dry-run / --file / --home / --help);建立時指定盒子獨立 HOME
@@ -138,7 +148,7 @@ worktool/
 ├── .vscode/
 │   └── extensions.json  推薦 `hediet.vscode-drawio`:在 VS Code 內就地編輯 `doc/diagram/*.drawio.svg`
 ├── AGENTS.md            給 agent 的 repo 約定(Agent skills、決議流程、git 慣例、shell 慣例);CLAUDE.md 是指向它的 symlink
-├── justfile             使用者介面入口:五個 `mod?`(test / box / agent / worktree / job)+ `default`(= just --list)
+├── justfile             使用者介面入口:六個 `mod?`(test / box / verify / agent / worktree / job)+ `default`(= just --list)
 └── .github/workflows/
     ├── ci.yml           GitHub Actions:push / PR 到 main 時跑全部 gate + commit-email + commit-attribution + commit-refs + review-log；milestone-gate PR 加跑 verify-all，由 ci-passed 彙總
     └── milestone-gate.yml  PR / PR 留言事件時以 lib/approval.sh 判斷,設 commit status `milestone-gate-approval`(#187)
@@ -146,7 +156,7 @@ worktool/
 
 命名採全單數(沿用 init_ubuntu 慣例):`test/`、`script/`、`doc/`、`lib/`、
 `box/`、`tool/`、`dockerfile/`。`script/` 之下依**動作**分目錄(`test/`、
-`box/`),而不是依 ci/cd 之類的流程角色。
+`box/`、`verify/`、`agent/`),而不是依 ci/cd 之類的流程角色。
 `script/` 與 `.agents/script/` 的可執行腳本必須放在類型子目錄內，
 不得直接放在頂層；#550 指定的共用 `.agents/script/job.sh` 是唯一例外。
 agent 的 Monitor 腳本放在 `.agents/script/monitor/`。
