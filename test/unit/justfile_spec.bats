@@ -1025,7 +1025,7 @@ _copy_namespace_docs() {
 }
 
 @test "#726: README command table distinguishes verify listing, all and opt-in realbox" {
-    run grep -E '^\| `just verify`' "${REPO_ROOT}/README.md"
+    run grep -E "^\| \`just verify\`" "${REPO_ROOT}/README.md"
     assert_success
     assert_output --partial '只列清單'
     run grep -E '^\| `just verify all' "${REPO_ROOT}/README.md"
