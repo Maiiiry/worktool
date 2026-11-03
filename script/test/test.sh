@@ -429,6 +429,7 @@ _run_lint() (
 )
 
 # Only the optional CPU repro cases may skip in the unit tier.
+# Returns 0 for unexpected skips, 1 for none, and >= 2 on awk failure.
 _has_unexpected_skip() {
     awk -v tier="$1" -v stress="${WORKTOOL_STRESS:-}" '
         /^ok [0-9]+ .*# skip/ {
@@ -451,7 +452,7 @@ _has_unexpected_skip() {
 # the $3 cases the required specs define, and no unexpected case skipped (bats
 # itself exits 0 on a skip). Prints the reason and returns 1 on any miss.
 _verify_tap() {
-    local _tier="$1" _tap="$2" _min="$3" _plan
+    local _tier="$1" _tap="$2" _min="$3" _plan _skip_rc=0
     # One awk, no `| head`: an unreadable stream is a missing plan (return
     # 1 below), and there is no early-closed pipe to fail under pipefail.
     if ! _plan="$(awk '/^1\.\.[0-9]+$/ { sub(/^1\.\./, ""); print; exit }' "${_tap}")" \
@@ -467,8 +468,13 @@ _verify_tap() {
         _err "${_tier} bats plan (${_plan}) is below the required specs' case total (${_min})"
         return 1
     fi
-    if _has_unexpected_skip "${_tier}" "${_tap}"; then
+    _has_unexpected_skip "${_tier}" "${_tap}" || _skip_rc=$?
+    if [[ "${_skip_rc}" -eq 0 ]]; then
         _err "${_tier} bats has skipped case(s) - a skipped required case is not green"
+        return 1
+    fi
+    if [[ "${_skip_rc}" -ne 1 ]]; then
+        _err "${_tier} bats skip check failed (awk exit ${_skip_rc})"
         return 1
     fi
     return 0
