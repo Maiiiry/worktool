@@ -587,7 +587,6 @@ rc=0
       輸出類型：動態示例；編號、數量、SHA、行號與實測值不逐字比對，固定判準依本項說明。
       ```text
       ./script/verify/gate.sh "$@"
-      ./script/test/test.sh
       ...(stdout：每層的 N 由來源掃描取得，1..N 全部 ok;沒有 not ok，skip 僅允許下列 unit 負載重現例外)
       ok 7 real engine: distrobox enter dev -- tmux -V prints a tmux version (auto-enter prerequisite)
       ok 8 real engine: distrobox enter dev -- fish --version prints a fish version (auto-enter prerequisite)
@@ -599,6 +598,7 @@ rc=0
       # bench-gate: [ERROR] shell median 98.4 ms exceeds --max-ms 1
       ok 10 real engine: bench.sh --box dev --runs 1 --warmup 0 --shell 'fish -c exit' --max-ms 1 exits 1 with the threshold message (the gate bites on a real box)
       ...(接著重播 stderr，以下省略其他階段的診斷)
+      ./script/test/test.sh
       [ci] ShellCheck OK
       （required specs OK 的案例與檔案數直接由 script/test/test.sh 掃描現行 declarations）
       ...(各層的 `[ci] <tier> bats OK`)
