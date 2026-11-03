@@ -805,8 +805,6 @@ script/box/setup.sh|test/unit/setup_spec.bats
 script/box/setup.sh|test/integration/setup_spec.bats
 script/box/status.sh|test/unit/status_spec.bats
 script/box/justfile.box|test/unit/justfile_spec.bats
-script/test/verify-env.sh|test/unit/verify_env_entry_spec.bats
-script/test/justfile.test|test/unit/verify_env_entry_spec.bats
 script/verify/all.sh|test/unit/verify_all_spec.bats
 script/verify/config_backup_paths.sh|test/unit/config_backup_spec.bats
 script/verify/config_backup_paths.sh|test/unit/config_backup_dangling_spec.bats
@@ -837,7 +835,6 @@ script/verify/setup.sh|test/unit/verify_list_spec.bats
 script/verify/ui.sh|test/unit/verify_ui_spec.bats
 script/verify/ui.sh|test/unit/verify_all_spec.bats
 script/verify/ui.sh|test/unit/verify_list_spec.bats
-test/helper/interrupt_load.bash|test/unit/verify_stress_spec.bats
 MAP
     _changed_hook_path_map
     _changed_doc_path_map
