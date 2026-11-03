@@ -689,9 +689,16 @@ teardown() {
 # --- the tool owns its CLI: --help and unknown / invalid options --------------
 
 @test "--help exits 0, names every option and the three metrics, and calls distrobox nothing" {
-    run "${BENCH}" --help
+    local _out="${TMP}/out" _err="${TMP}/err"
+    run bash -c '"$1" --help >"$2" 2>"$3"' _ "${BENCH}" "${_out}" "${_err}"
     assert_success
+    assert_equal "$(cat "${_out}")" ""
+    run cat "${_err}"
     assert_output --partial "Usage: bench.sh"
+    assert_output --partial "Quiet host:"
+    assert_output --partial "Exit codes:"
+    assert_output --partial "Environment (tests only):"
+    assert_output --partial "BENCH_CLOCK"
     local _opt
     for _opt in --box --runs --warmup --max-ms --json --shell --help; do
         assert_output --partial "${_opt}"
