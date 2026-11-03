@@ -20,7 +20,7 @@ setup() {
     printf 'not a directory\n' >"${HOME}/blocked"
     cfgbk_dir_create
 
-    run --separate-stderr bash -c '
+    run --separate-stderr bash -s -- "${REPO_ROOT}" <<'BASH'
         set -euo pipefail
         source "$1/lib/guard.sh"
         source "$1/script/verify/config_backup_paths.sh"
@@ -28,7 +28,7 @@ setup() {
         export XDG_CONFIG_HOME="${HOME}/blocked/missing"
         cfgbk_paths
         cfgbk_backup_body
-    ' _ "${REPO_ROOT}"
+BASH
 
     assert_failure 1
     assert_output ''
