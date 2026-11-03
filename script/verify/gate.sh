@@ -558,51 +558,7 @@ _check_tier_order() {
 # Accept only complete system-real TAP whose failed cases are the two
 # latency assertions with exit 3 AND bench's busy-host diagnostic.
 _only_busy_latency() {
-    awk '
-        /^\[system-real\] --- dockerd log \(tail\): / && errors == 1 && !in_log { in_log = 1; next }
-        /^\[system-real\] --- end of dockerd log$/ && in_log { in_log = 0; next }
-        in_log { next }
-        function finish() {
-            if (failed && (!latency || !status3 || !busy)) bad = 1
-        }
-        /^\[ci\] acceptance bats OK$/ { ready = 1 }
-        /^\[ci\] Running system-real bats / {
-            if (!ready || active) bad = 1
-            active = 1; next
-        }
-        /^1\.\.[0-9]+$/ {
-            if (plan && count != plan) bad = 1
-            if (active) { if (plan) bad = 1; plan = substr($0, 4) + 0 }
-            next
-        }
-        /^(not )?ok [0-9]+ / {
-            if (!active) { if (/^not ok /) bad = 1; next }
-            finish(); failed = /^not ok /; status3 = busy = 0
-            line = $0; sub(/^(not )?ok /, "", line)
-            number = line + 0; sub(/^[0-9]+ /, "", line)
-            count++; if (number != count || !plan || count > plan) bad = 1
-            if (line ~ /# skip/) bad = 1
-            latency = (line == "real engine: bench.sh --box dev --runs 5 --warmup 2 --shell \047fish -c exit\047 --max-ms ENTER_MAX_MS exits 0 (enter-latency gate on fish) and prints the enter, shell and inbox metric lines" ||
-                       line == "real engine: bench.sh --box dev --runs 1 --warmup 0 --shell \047fish -c exit\047 --max-ms 1 exits 1 with the threshold message (the gate bites on a real box)")
-            if (failed) failures++
-            next
-        }
-        active && failed && /^# (status : 3|actual   : 3)$/ { status3 = 1 }
-        active && failed && /^# (output *: |  )?\[ERROR\] host too busy (to measure|mid-run) \(inconclusive\): .*re-run when idle$/ { busy = 1 }
-        /^Bail out!/ { bad = 1 }
-        /^\[ci\] ERROR:/ {
-            if ($0 != "[ci] ERROR: system-real bats failed" || !active || count != plan) bad = 1
-            errors++; next
-        }
-        active && plan && !/^#/ && !/^$/ &&
-            !/^error: [Rr]ecipe .* failed.*exit code 1$/ &&
-            !/^\[system-real\] stopping nested dockerd \(pid [0-9]+\)$/ &&
-            !/^\[system-real\] cleanup: (containers left in the nested daemon: 0|box .* still present - removing)$/ { bad = 1 }
-        END {
-            finish()
-            exit !(active && plan > 0 && count == plan && failures > 0 && errors == 1 && !in_log && !bad)
-        }
-    ' "$1"
+    awk -f "${REPO_ROOT}/lib/verify_busy_latency.awk" "$2" "$1"
 }
 
 # Capture before judging so the original command status survives TAP parsing.
@@ -610,21 +566,15 @@ _item_2_1() (
     local _rc=0 _dir=""
     _make_tmpdir _dir || return 1
     trap 'rm -rf "${_dir}"' EXIT
-    # The foreground pipe drains both tees before capture files are replayed.
-    # Keep a merged transcript for the stage-ordered latency evidence parser.
-    {
-        verify_run "${GATE_TIMEOUT}" just test \
-            2> >(tee "${_dir}/stderr") > >(tee "${_dir}/stdout") || _rc=$?
-        printf '%s\n' "${_rc}" >"${_dir}/status"
-    } | cat >"${_dir}/output" || return 1
-    read -r _rc <"${_dir}/status" || return 1
+    verify_run "${GATE_TIMEOUT}" just test \
+        >"${_dir}/stdout" 2>"${_dir}/stderr" || _rc=$?
     cat "${_dir}/stdout" || return 1
     cat "${_dir}/stderr" >&2 || return 1
     if [[ "${_rc}" -eq 124 ]]; then
         _err "\`just test\` did not finish within ${GATE_TIMEOUT}s (timeout)"
         return 1
     fi
-    if [[ "${_rc}" -eq 1 ]] && _only_busy_latency "${_dir}/output"; then
+    if [[ "${_rc}" -eq 1 ]] && _only_busy_latency "${_dir}/stdout" "${_dir}/stderr"; then
         printf '[UNAVAILABLE] gate.sh: 延遲 gate 未判定、請在閒置時重跑 (ADR 0003)\n' >&2
         return "${EXIT_UNAVAILABLE}"
     fi

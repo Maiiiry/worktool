@@ -117,7 +117,7 @@ _make_repo_copy() {
     cp "${REPO_ROOT}/script/verify/gate.sh" "${COPY}/script/verify/gate.sh"
     cp -R "${REPO_ROOT}/doc/evidence" "${COPY}/doc/evidence"
     mkdir -p "${COPY}/lib"
-    cp "${REPO_ROOT}/lib/guard.sh" "${REPO_ROOT}/lib/log.sh" "${REPO_ROOT}/lib/verify_run.sh" "${COPY}/lib/"
+    cp "${REPO_ROOT}/lib/guard.sh" "${REPO_ROOT}/lib/log.sh" "${REPO_ROOT}/lib/verify_run.sh" "${REPO_ROOT}/lib/verify_busy_latency.awk" "${COPY}/lib/"
 }
 
 # _stub <name> - body on stdin. The body runs with $REAL set to the real
@@ -632,11 +632,33 @@ EOF
     refute_output --partial 'gate PASS'
 }
 
+@test "2.1: busy verdict survives stderr relayed after all stdout" {
+    _stub_ci_tools
+    _stub_busy_latency
+    # Model an independently buffered stderr relay without timing assumptions.
+    local barrier="${BATS_TEST_TMPDIR}/stdout-drained"
+    mkfifo "${barrier}"
+    _stub tee <<EOF
+if [[ "\$1" == */stderr ]]; then
+    read -r token <'${barrier}'
+    "\${REAL}" "\$1"
+else
+    cat >"\$1"
+    cat "\$1"
+    printf 'drained\n' >'${barrier}'
+fi
+EOF
+    PATH="${BIN}:${PATH}" run "${COPY_GATE}" 2.1
+    assert_failure 3
+    assert_output --partial '未判定、請在閒置時重跑'
+    refute_output --partial 'FAILED'
+}
+
 @test "2.1: mixed failures and unreliable latency evidence stay failed" {
     _stub_ci_tools
     _stub_busy_latency
-    local _transcript="${BATS_TEST_TMPDIR}/busy.tap" _rc=0 _mode
-    "${BIN}/just" >"${_transcript}" 2>&1 || _rc=$?
+    local _transcript="${BATS_TEST_TMPDIR}/busy.tap" _stderr="${BATS_TEST_TMPDIR}/runner.log" _rc=0 _mode
+    "${BIN}/just" >"${_transcript}" 2>"${_stderr}" || _rc=$?
     [[ "${_rc}" -eq 1 ]]
     for _mode in mixed infrastructure missing-status missing-busy truncated; do
         cp "${_transcript}" "${SYS_BLOCK}"
@@ -655,6 +677,7 @@ EOF
         esac
         _stub just <<EOF
 cat '${SYS_BLOCK}'
+cat '${_stderr}' >&2
 exit 1
 EOF
         PATH="${BIN}:${PATH}" run "${COPY_GATE}" 2.1
