@@ -1,6 +1,10 @@
 #!/usr/bin/env bats
 # Mutation, control and renderer purity cases generated from the shared tables.
 # Repository drift checks live in config_mutation_drift_spec.bats.
+# Every row's mutant must fail each named case; the control runs each case
+# on a clean copy. Renderer mutants must also change only their own element
+# on ALL, with the exact expected bytes recorded in the shared rows.
+# Behavioural mutants claim only that they are caught.
 # eof is only the final line's terminator; blank includes whitespace-only lines.
 
 load "${BATS_TEST_DIRNAME}/../helper/common"

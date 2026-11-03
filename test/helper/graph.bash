@@ -3,7 +3,7 @@
 # round 8), for the ownership specs.
 #
 # Loaded by test/unit/config_owner_spec.bats and
-# test/unit/config_mutation_spec.bats after helper/common (REPO_ROOT).
+# test/unit/config_mutation_drift_spec.bats after helper/common (REPO_ROOT).
 #
 #   graph_modules <tree> <file>   every file <file> reaches by `source` / `.`
 #                                 lines, itself included, repo-relative, one

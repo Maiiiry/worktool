@@ -33,8 +33,9 @@
 #
 # Every file comparison is byte-exact (cmp against an expected file):
 # `run cat` / `$(...)` drop trailing newlines and could not see the
-# framing this contract promises to keep. test/unit/config_mutation_spec
-# proves these cases fail on broken copies of lib/config.sh.
+# framing this contract promises to keep. test/unit/config_mutation_spec.bats
+# proves these cases fail on broken copies of lib/config.sh; shared rows live
+# in test/helper/config_mutation_rows.bash.
 
 load "${BATS_TEST_DIRNAME}/../helper/common"
 
