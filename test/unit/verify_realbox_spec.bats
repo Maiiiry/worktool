@@ -1398,6 +1398,9 @@ _window_input() {
 
 @test "#362: 5.2 refuses an existing fish process as new-window evidence" {
     _fake_window_process
+    # The timeout verdict must not depend on scheduler time inside an ownership probe.
+    # Deadline-inside-probe behavior has dedicated #700 coverage.
+    _control_window_clock
     export FAKE_WINDOW_BASELINE='4242 fish'
     run _window_input 4242
     assert_equal "$(cat "${STATE}/window-rc")" "3"
@@ -1482,6 +1485,9 @@ STUB
 
 @test "#433: 5.2 passes with a new fish in this runs dev namespace" {
     _fake_window_process
+    # Namespace verdicts must not depend on scheduler time at the discovery deadline.
+    # Deadline and undetermined ownership behavior have dedicated #700 coverage.
+    _control_window_clock
     run _window_input 4242
     assert_equal "$(cat "${STATE}/window-rc")" "0"
     assert_output --partial "window-evidence: pid=4242 comm=fish host=mnt:[100] window=mnt:[200] dev=mnt:[200]"
@@ -3475,6 +3481,9 @@ STUB
 
 @test "#663: standalone apply times out inconclusively and keeps restore available" {
     _auto_window_tools
+    # The timeout verdict must not depend on scheduler time while ownership rows are scanned.
+    # Deadline-inside-scan behavior has dedicated #700 coverage.
+    _control_window_clock
     _realbox_quiet 5.2.1
     export FAKE_NO_WINDOW=1
     run "${REALBOX}" --allow-real-box 5.2.2 </dev/null
@@ -3691,6 +3700,173 @@ STUB
     [ -f "$(_backup_dir)/manifest" ]
 }
 
+_assert_52_kept_evidence_stderr() {
+    local directory="$1" doc="${2:-${REPO_ROOT}/doc/acceptance.md}"
+    local expected selected="" line
+    expected="$(awk '
+        /^  - \[ \] 5\.2 開終端/ {section=1}
+        /^  - \[ \] 5\.3 / {section=0}
+        section && $0 == "      ```text stderr" {block=1; blocks++; next}
+        section && block && $0 == "      ```" {block=0; closed++; next}
+        section && block {
+            sub(/^      /, "")
+            lines[++count]=$0
+        }
+        END {
+            if (blocks != 1 || closed != 1 || count != 2) exit 1
+            print lines[1]
+            print lines[2]
+        }' "${doc}")" || return 1
+    expected="${expected//'<本輪 window.* 目錄>'/"${directory}"}"
+    while IFS= read -r line; do
+        if [[ "${line}" == *'kept evidence='* || "${line}" == *'manual check:'* ]]; then
+            selected+="${selected:+$'\n'}${line}"
+        fi
+    done <<<"${stderr}"
+    assert_equal "${selected}" "${expected}"
+}
+
+@test "#700: kept-evidence stderr comparison rejects a changed doc line and extra prefixes or suffixes" {
+    local directory="${BATS_TEST_TMPDIR}/window.literal.dots"
+    local doc="${BATS_TEST_TMPDIR}/acceptance-mutated.md" guidance warning
+    warning="[WARN] cannot safely close owned window; keeping ownership evidence; kept evidence=${directory}"
+    guidance="[WARN] manual check: inspect ${directory}/before and process cwd/ancestry; confirm the owned window is closed, save evidence, then remove ${directory} and retry 5.2.3"
+    local captured_stderr="${warning}"$'\n'"${guidance}"
+    stderr="${captured_stderr}" run _assert_52_kept_evidence_stderr "${directory}"
+    assert_success
+
+    sed 's/keeping ownership evidence/keeping changed ownership evidence/' \
+        "${REPO_ROOT}/doc/acceptance.md" >"${doc}"
+    stderr="${captured_stderr}" run _assert_52_kept_evidence_stderr "${directory}" "${doc}"
+    assert_failure
+
+    local changed_stderr
+    for changed_stderr in \
+        "prefix ${warning}"$'\n'"${guidance}" \
+        "${warning} suffix"$'\n'"${guidance}" \
+        "${warning}"$'\n'"prefix ${guidance}" \
+        "${warning}"$'\n'"${guidance} suffix"; do
+        stderr="${changed_stderr}" run _assert_52_kept_evidence_stderr "${directory}"
+        assert_failure
+    done
+}
+
+@test "#700: cleanup cwd probe failure retains evidence and fails with manual guidance" {
+    _cleanup_cwd_tools
+    local mode directory
+    for mode in failure timeout; do
+        rm -f "${STATE}/cleanup-ready" "${STATE}/closed"
+        _realbox_quiet 5.2.1
+        FAKE_CLEANUP_CWD="${mode}" run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+        assert_failure 1
+        directory="$(cat "${STATE}/window-directory")"
+        [ -f "${directory}/before" ]
+        _assert_52_kept_evidence_stderr "${directory}"
+        [ ! -e "${STATE}/closed" ]
+        rm -f "${STATE}/window-directory" "${STATE}/cleanup-ready"
+        rm -rf -- "${directory}"
+        _realbox_quiet 5.2.3
+    done
+}
+
+@test "#700: a cwd probe failure on a vanished unrelated window still keeps evidence" {
+    _cleanup_cwd_tools
+    cp "${STUBS}/readlink" "${STATE}/vanished-readlink"
+    cat >"${STUBS}/readlink" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == /proc/5556/cwd && -e "${FAKE_STATE_DIR}/cleanup-ready" ]]; then
+    exit "${FAKE_VANISHED_RC}"
+fi
+exec "${FAKE_STATE_DIR}/vanished-readlink" "$@"
+STUB
+    local probe_rc directory
+    for probe_rc in 1 137; do
+        rm -f "${STATE}/cleanup-ready" "${STATE}/closed"
+        _realbox_quiet 5.2.1
+        FAKE_VANISHED_RC="${probe_rc}" run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+        assert_failure 1
+        directory="$(find "$(_backup_dir)" -maxdepth 1 -type d -name 'window.*')"
+        [ -d "${directory}" ]
+        [ -f "${directory}/before" ]
+        _assert_52_kept_evidence_stderr "${directory}"
+        assert_equal "$(cat "${STATE}/closed")" '-HUP -- -4240'
+        rm -f "${STATE}/cleanup-ready" "${STATE}/closed"
+        rm -rf -- "${directory}"
+        _realbox_quiet 5.2.3
+    done
+}
+
+@test "#700: a deadline-interrupted cleanup scan retains evidence and fails" {
+    _cleanup_cwd_tools
+    _control_window_clock
+    _realbox_quiet 5.2.1
+    FAKE_CLEANUP_CWD=deadline run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+    assert_failure 1
+    local directory
+    directory="$(cat "${STATE}/window-directory")"
+    [ -f "${directory}/before" ]
+    _assert_52_kept_evidence_stderr "${directory}"
+    [ ! -e "${STATE}/closed" ]
+}
+
+@test "#700: an undetermined ownership probe cannot become successful apply or restore evidence" {
+    _auto_window_tools
+    _control_window_clock
+    cp "${STUBS}/readlink" "${STATE}/once-readlink"
+    cat >"${STUBS}/readlink" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == /proc/4240/cwd && ! -e "${FAKE_STATE_DIR}/cwd-probed" ]]; then
+    touch "${FAKE_STATE_DIR}/cwd-probed"
+    exit 137
+fi
+exec "${FAKE_STATE_DIR}/once-readlink" "$@"
+STUB
+    _realbox_quiet 5.2.1
+    local step
+    for step in 5.2.2 5.2.3; do
+        rm -f "${STATE}/cwd-probed"
+        run "${REALBOX}" --allow-real-box "${step}" </dev/null
+        assert_failure 3
+        assert_output --partial 'window ownership undetermined; acceptance inconclusive'
+        refute_output --partial 'window-evidence:'
+        run find "$(_backup_dir)" -maxdepth 1 -name 'window.*'
+        assert_output ''
+    done
+}
+
+@test "#700: a tracked window losing cwd ownership is not proof that it closed" {
+    _auto_window_tools
+    cp "${STUBS}/ps" "${STATE}/tracked-ps"
+    cp "${STUBS}/readlink" "${STATE}/tracked-readlink"
+    cat >"${STUBS}/ps" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == '-p 4240 -o pgid=,sid=' ]]; then
+    touch "${FAKE_STATE_DIR}/stop-started"
+fi
+exec "${FAKE_STATE_DIR}/tracked-ps" "$@"
+STUB
+    cat >"${STUBS}/readlink" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == /proc/4240/cwd && -e "${FAKE_STATE_DIR}/stop-started" ]]; then
+    printf '/unrelated/window\n'
+    exit 0
+fi
+exec "${FAKE_STATE_DIR}/tracked-readlink" "$@"
+STUB
+    _realbox_quiet 5.2.1
+    run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+    assert_failure 1
+    local directory
+    directory="$(cat "${STATE}/window-directory")"
+    [ -f "${directory}/before" ]
+    _assert_52_kept_evidence_stderr "${directory}"
+    [ ! -e "${STATE}/closed" ]
+}
+
 @test "#663: failed cleanup inventories preserve owned window evidence" {
     _auto_window_tools
     cp "${STUBS}/ps" "${STATE}/cleanup-ps"
@@ -3825,6 +4001,8 @@ STUB
         assert_failure 3
         assert_equal "$(cat "${STATE}/clock")" 13
         refute_output --partial 'cannot inventory owned window'
+        refute_output --partial 'keeping ownership evidence'
+        [ ! -d "$(cat "${STATE}/window-directory")" ]
         rm -f "${STATE}/window-directory"
         _realbox_quiet 5.2.3
         _realbox_quiet 5.2.1
@@ -3988,26 +4166,44 @@ STUB
     [ -f "$(_backup_dir)/manifest" ]
 }
 
-@test "#663: a non-fish wrapper gone or uninspectable at the deadline is inconclusive" {
+@test "#700: apply ownership probing across the deadline is undetermined before any final wrapper probe" {
     _auto_window_tools
+    _control_window_clock
     _realbox_quiet 5.2.1
+    cp "${STUBS}/readlink" "${STATE}/deadline-readlink"
+    cat >"${STUBS}/readlink" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == /proc/4240/cwd ]]; then
+    read -r now <"${FAKE_STATE_DIR}/clock"
+    if (( now > 0 && now < 9 )); then
+        printf '9\n' >"${FAKE_STATE_DIR}/clock"
+        exit "${FAKE_DEADLINE_RC}"
+    fi
+fi
+exec "${FAKE_STATE_DIR}/deadline-readlink" "$@"
+STUB
     cp "${STUBS}/ps" "${STATE}/exited-ps"
     cat >"${STUBS}/ps" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == '-p 4242 -o comm=' ]]; then
     touch "${FAKE_STATE_DIR}/deadline-inspected"
-    exit "${FAKE_DEADLINE_RC:-0}"
+    printf 'sh\n'
+    exit 0
 fi
 exec "${FAKE_STATE_DIR}/exited-ps" "$@"
 STUB
     local probe_rc
-    for probe_rc in 0 1; do
+    for probe_rc in 0 137; do
+        printf '0\n' >"${STATE}/clock"
         rm -f "${STATE}/deadline-inspected" "${STATE}/closed"
         FAKE_WINDOW_COMM=sh FAKE_DEADLINE_RC="${probe_rc}" \
             run "${REALBOX}" --allow-real-box 5.2.2 </dev/null
         assert_failure 3
-        [ -e "${STATE}/deadline-inspected" ]
+        assert_output --partial 'window ownership undetermined; acceptance inconclusive'
+        [ ! -e "${STATE}/deadline-inspected" ]
+        refute_output --partial 'Ghostty new shell timed out'
         refute_output --partial 'is not fish'
         [ -f "$(_backup_dir)/manifest" ]
         assert_equal "$(cat "${STATE}/closed")" '-HUP -- -4240'
@@ -4018,6 +4214,8 @@ STUB
 
 @test "#663: a non-fish wrapper seen once keeps its deadline probe after later sweeps lose it" {
     _auto_window_tools
+    # The deadline must expire between sweeps, not inside an ownership probe.
+    _control_window_clock
     _realbox_quiet 5.2.1
     cp "${STUBS}/ps" "${STATE}/exited-ps"
     cp "${STUBS}/readlink" "${STATE}/seen-readlink"

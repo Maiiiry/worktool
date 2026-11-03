@@ -864,15 +864,17 @@ _52_process_snapshot() {
     done <<<"${_52_ROWS}"
 }
 
+# Return 0 for owned, 1 for definitely not owned, 2 for undetermined.
 _52_window_root() {
     local pid="$1" parent cwd depth
     for ((depth=0; depth<64; depth++)); do
-        (( SECONDS < ${_52_DEADLINE:-SECONDS+1} )) || return 1
+        (( SECONDS < ${_52_DEADLINE:-SECONDS+1} )) || return 2
         [[ "${pid}" =~ ^[1-9][0-9]*$ ]] || return 1
         parent="${_52_PARENTS[${pid}]:-0}"
         [[ "${parent}" =~ ^[1-9][0-9]*$ && "${parent}" != "${pid}" ]] || return 1
         if [[ "${_52_COMMS[${parent}]:-}" == ghostty ]]; then
-            cwd="$(timeout -s KILL 1 readlink "/proc/${pid}/cwd" 2>/dev/null)" || return 1
+            cwd="$(timeout -s KILL 1 readlink "/proc/${pid}/cwd" 2>/dev/null)" || return 2
+            (( SECONDS < ${_52_DEADLINE:-SECONDS+1} )) || return 2
             if [[ "${cwd}" == "${_52_WINDOW_DIR}" ]] && ! grep -qE "^[[:space:]]*${pid}[[:space:]]" "${_52_WINDOW_DIR}/before"; then
                 printf '%s\n' "${pid}"
                 return 0
@@ -892,12 +894,16 @@ _52_window_directory() {
 }
 
 _52_apply_window_root() {
-    local pid parent comm root
+    local pid parent comm root rc
     while read -r pid parent comm; do
-        (( SECONDS < _52_DEADLINE )) || return 1
+        (( SECONDS < _52_DEADLINE )) || return 2
         [[ "${parent}" =~ ^[1-9][0-9]*$ ]] || continue
         [[ "${_52_COMMS[${parent}]:-}" == ghostty ]] || continue
-        root="$(_52_window_root "${pid}")" || continue
+        root="$(_52_window_root "${pid}")" || {
+            rc=$?
+            [[ "${rc}" -eq 1 ]] && continue
+            return 2
+        }
         [[ "${root}" == "${pid}" ]] || continue
         printf '%s\n' "${root}"
         return 0
@@ -907,7 +913,7 @@ _52_apply_window_root() {
 
 _52_find_window() {
     # Reserve one second for the final bounded probe before the ten-second limit.
-    local mode="$1" _52_DEADLINE=$((SECONDS + 9)) _52_ROWS pid parent comm root apply_root nonfish=''
+    local mode="$1" _52_DEADLINE=$((SECONDS + 9)) _52_ROWS apply_root rc nonfish=''
     local -A _52_PARENTS=() _52_COMMS=()
     while (( SECONDS < _52_DEADLINE )); do
         if ! _52_process_snapshot; then
@@ -917,32 +923,17 @@ _52_find_window() {
         # A wrapper seen by an earlier sweep stays the deadline candidate.
         apply_root=''
         if [[ "${mode}" == apply ]]; then
-            apply_root="$(_52_apply_window_root)" || { sleep 0.1; continue; }
+            apply_root="$(_52_apply_window_root)" || {
+                rc=$?
+                [[ "${rc}" -ne 2 ]] || { _52_ownership_unknown; return 3; }
+                (( SECONDS < _52_DEADLINE )) || break
+                sleep 0.1 || return 3
+                continue
+            }
         fi
-        while read -r pid parent comm; do
-            (( SECONDS < _52_DEADLINE )) || break
-            [[ "${pid}" =~ ^[1-9][0-9]*$ ]] || continue
-            case "${comm}" in fish|bash|sh|zsh|dash|ksh) ;; *) continue ;; esac
-            grep -qE "^[[:space:]]*${pid}[[:space:]]" "${_52_WINDOW_DIR}/before" && continue
-            if [[ "${mode}" == apply ]]; then
-                root="${apply_root}"
-                _52_window_directory "${pid}" || continue
-            else
-                root="$(_52_window_root "${pid}")" || continue
-            fi
-            [[ -n "${root}" ]] || continue
-            if [[ "${mode}" == apply ]]; then
-                # Login wrappers share the owned cwd before exec into fish.
-                if [[ "${comm}" != fish ]]; then
-                    nonfish="${pid}"
-                    continue
-                fi
-                _52_window_evidence "${pid}"
-            else
-                _52_restored_window_evidence "${pid}"
-            fi
-            return $?
-        done <<<"${_52_ROWS}"
+        rc=0
+        _52_scan_shells "${mode}" "${apply_root}" || rc=$?
+        [[ "${rc}" -eq 2 ]] || return "${rc}"
         sleep 0.1 || return 3
     done
     if [[ -n "${nonfish}" ]]; then
@@ -951,6 +942,48 @@ _52_find_window() {
     fi
     log_warn "Ghostty new shell timed out; acceptance inconclusive"
     return 3
+}
+
+_52_ownership_unknown() {
+    log_warn "window ownership undetermined; acceptance inconclusive"
+}
+
+# Return 2 for no candidate, or 3 after _52_ownership_unknown logs an
+# undetermined restore ownership probe; preserve evidence failures verbatim.
+# In apply mode, assign the last non-fish login wrapper to _52_find_window's
+# local nonfish variable through Bash dynamic scoping.
+_52_scan_shells() {
+    local mode="$1" apply_root="$2" pid parent comm root rc
+    while read -r pid parent comm; do
+        (( SECONDS < _52_DEADLINE )) || break
+        [[ "${pid}" =~ ^[1-9][0-9]*$ ]] || continue
+        case "${comm}" in fish|bash|sh|zsh|dash|ksh) ;; *) continue ;; esac
+        grep -qE "^[[:space:]]*${pid}[[:space:]]" "${_52_WINDOW_DIR}/before" && continue
+        if [[ "${mode}" == apply ]]; then
+            root="${apply_root}"
+            _52_window_directory "${pid}" || continue
+        else
+            root="$(_52_window_root "${pid}")" || {
+                rc=$?
+                [[ "${rc}" -eq 1 ]] && continue
+                _52_ownership_unknown
+                return 3
+            }
+        fi
+        [[ -n "${root}" ]] || continue
+        if [[ "${mode}" == apply ]]; then
+            # Login wrappers share the owned cwd before exec into fish.
+            if [[ "${comm}" != fish ]]; then
+                nonfish="${pid}"
+                continue
+            fi
+            _52_window_evidence "${pid}"
+        else
+            _52_restored_window_evidence "${pid}"
+        fi
+        return $?
+    done <<<"${_52_ROWS}"
+    return 2
 }
 
 # A final snapshot can outlive a transient login wrapper. Only a successful,
@@ -973,6 +1006,7 @@ _52_current_root() {
     local -A _52_PARENTS=() _52_COMMS=()
     _52_process_snapshot || return 2
     [[ -n "${_52_COMMS[$1]+present}" ]] || return 1
+    # A tracked PID losing ownership is not proof that its window closed.
     _52_window_root "$1" || return 2
 }
 
@@ -1009,16 +1043,21 @@ _52_stop_window() {
 }
 
 _52_sweep_window() {
-    local _52_ROWS pid parent comm root group pgid sid rc=0 found=0
+    local _52_ROWS pid parent comm root group pgid sid probe_rc rc=0 found=0
     local -A _52_PARENTS=() _52_COMMS=()
     _52_process_snapshot || {
         guard_fail "cannot inventory owned window; keeping ownership evidence"
         return 1
     }
     while read -r pid parent comm; do
-        (( SECONDS < _52_DEADLINE )) || break
+        (( SECONDS < _52_DEADLINE )) || return 1
         [[ "${parent}" =~ ^[1-9][0-9]*$ && "${_52_COMMS[${parent}]:-}" == ghostty ]] || continue
-        root="$(_52_window_root "${pid}")" || continue
+        probe_rc=0
+        root="$(_52_window_root "${pid}")" || probe_rc=$?
+        if [[ "${probe_rc}" -ne 0 ]]; then
+            [[ "${probe_rc}" -eq 1 ]] || rc=1
+            continue
+        fi
         [[ "${root}" == "${pid}" ]] || continue
         found=1
         (( SECONDS < _52_DEADLINE )) || return 1
@@ -1031,6 +1070,7 @@ _52_sweep_window() {
             rc=1
         fi
     done <<<"${_52_ROWS}"
+    (( SECONDS < _52_DEADLINE )) || return 1
     [[ "${rc}" -eq 0 ]] || return 1
     [[ "${found}" -eq 1 ]] || return 2
 }
@@ -1039,16 +1079,23 @@ _52_close_window() {
     [[ -n "${_52_WINDOW_DIR:-}" ]] || return 0
     # Start retries only while a full second remains, so a retry sweep is
     # never cut off by the deadline mid-snapshot.
-    local _52_DEADLINE=$((SECONDS + 4)) rc retry_until=$((SECONDS + 3))
+    local _52_DEADLINE=$((SECONDS + 4)) rc scanned=0 retry_until=$((SECONDS + 3))
     while (( SECONDS < retry_until )); do
         rc=0
         _52_sweep_window || rc=$?
-        [[ "${rc}" -ne 1 ]] || return 1
+        [[ "${rc}" -ne 1 ]] || { _52_keep_window; return 1; }
+        scanned=1
         [[ "${rc}" -ne 0 && "${_52_WINDOW_PENDING:-0}" -eq 1 ]] || break
-        sleep 0.1 || return 1
+        sleep 0.1 || { _52_keep_window; return 1; }
     done
+    [[ "${scanned}" -eq 1 ]] || { _52_keep_window; return 1; }
     rm -rf -- "${_52_WINDOW_DIR}" || return 1
     _52_WINDOW_DIR=''
+}
+
+_52_keep_window() {
+    log_warn "cannot safely close owned window; keeping ownership evidence; kept evidence=${_52_WINDOW_DIR}"
+    log_warn "manual check: inspect ${_52_WINDOW_DIR}/before and process cwd/ancestry; confirm the owned window is closed, save evidence, then remove ${_52_WINDOW_DIR} and retry 5.2.3"
 }
 
 _52_auto_window() {
