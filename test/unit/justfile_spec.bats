@@ -498,6 +498,12 @@ EOF
     assert_line --regexp '^ +bench .*--max-wait N'
 }
 
+@test "#720: just verify lists the setup real-box opt-in" {
+    _just --list verify
+    assert_success
+    assert_line --regexp '^ +setup .*args: ITEM, --list, --allow-real-box, --help'
+}
+
 @test "#513: bare just verify lists the realbox comment tag option" {
     _just verify
     assert_success
