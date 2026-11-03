@@ -1036,7 +1036,7 @@ _item_3_4() {
         [[ "${LAST_RC}" -eq 1 ]] || _bad=1
         _run_norm "${_env[@]}" just box setup || return 1
         [[ "${LAST_RC}" -eq 1 ]] || _bad=1
-        diff -r "${ITEM_T}/before" "${ITEM_H}" || _bad=1
+        diff -r "${ITEM_T}/before" "${ITEM_H}" || return 1
         _run_norm "${_env[@]}" just box status || return 1
         [[ "${LAST_RC}" -eq 0 ]] || _bad=1
         _label=ghostty

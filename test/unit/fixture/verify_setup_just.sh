@@ -6,6 +6,12 @@ _out="$(mktemp)"
 trap 'rm -f -- "${_out}" "${_out}.stripped"' EXIT
 _rc=0
 "${VERIFY_REAL_JUST}" "$@" >"${_out}" 2>&1 || _rc=$?
+if [[ "${1:-}:${2:-}" == box:setup && "${VERIFY_CORRUPTION}" == malformed-write ]]; then
+    if [[ -f "${HOME}/.config/ghostty/config" ]] && \
+        [[ "$(cat "${HOME}/.config/ghostty/config")" == *'user content'* ]]; then
+        printf 'unexpected\n' >"${HOME}/unexpected"
+    fi
+fi
 _cfg="${XDG_CONFIG_HOME:-${HOME}/.config}/ghostty/config"
 if [[ "${1:-}:${2:-}" == box:setup && -f "${_cfg}" ]]; then
     case "${VERIFY_CORRUPTION}" in

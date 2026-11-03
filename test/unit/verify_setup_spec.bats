@@ -1406,3 +1406,10 @@ _degrade_setup_line() {
     assert_failure 1
     assert_output --partial "tmux.conf lost the user's own content"
 }
+
+@test "#713 3.4: a changed HOME never reports unchanged=yes" {
+    _stub_just_setup_writing malformed-write
+    run "${VERIFY}" 3.4
+    assert_failure 1
+    refute_output --partial 'malformed-refused=ghostty/config unchanged=yes'
+}
