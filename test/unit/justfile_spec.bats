@@ -1023,3 +1023,18 @@ _copy_namespace_docs() {
     assert_output --partial '--max-ms'
     assert_output --partial '--max-wait'
 }
+
+@test "#726: README command table distinguishes verify listing, all and opt-in realbox" {
+    run grep -E '^\| `just verify`' "${REPO_ROOT}/README.md"
+    assert_success
+    assert_output --partial '只列清單'
+    run grep -E '^\| `just verify all' "${REPO_ROOT}/README.md"
+    assert_success
+    assert_output --partial '非實機'
+    run grep -E '^\| `just verify <' "${REPO_ROOT}/README.md"
+    assert_success
+    assert_output --partial 'ui、gate、setup、diagram、evidence'
+    run grep -E '^\| `just verify realbox' "${REPO_ROOT}/README.md"
+    assert_success
+    assert_output --partial '--allow-real-box'
+}

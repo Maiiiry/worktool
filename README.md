@@ -87,6 +87,11 @@ justfile 只是薄轉發器,參數驗證與 `--help` 都在腳本(決策與完�
 | `just box status` | 印出目前生效的進盒決策、來源(`default` / `user`)、受管區塊是否存在,以及受管 command 裡的 wrapper 與 distrobox 是否可執行;repo 搬走或 wrapper 不可執行時提示重跑 `just box setup` |
 | `just box enter [--box <名稱>] [--distrobox <路徑>] [--timeout <秒>] [-- <指令>...]` | 進盒;盒子**第一次啟動**(distrobox-init 裝套件,可能要數分鐘)時先說明、給 `docker logs -f <盒>` 與 host log 路徑,之後每 10 秒印「階段 + 經過時間 + 最新一行輸出」,逾時(預設 15 分鐘)或失敗時印原因、log 最後 20 行與復原方式並 exit 1(不停、不刪盒);Ghostty 受管 command 與手動進盒共用此 wrapper(見 [`doc/enter.md`](doc/enter.md)) |
 | `just box help`(或 `h`) | 依序印 `assemble.sh`、`bench.sh`、`setup.sh`、`status.sh`、`enter.sh` 的 usage |
+| `just verify` | 只列清單,不執行驗收;exit 0 不代表驗收通過 |
+| `just verify all [--list] [--help]` | 依序執行全部非實機驗收群組(ui、gate、setup、diagram、evidence),遇錯即停 |
+| `just verify <群組> [ITEM...] [--list] [--help]` | 群組為 ui、gate、setup、diagram、evidence;省略 ITEM 跑該群組全部項目,指定 ITEM 只跑該項;各群組選項見 `just verify help` |
+| `just verify realbox [ITEM...] --allow-real-box` | 實機驗收,須明確 opt-in;不包含在 `just verify all` |
+| `just verify help`(或 `h`) | 印出各驗收腳本的 usage |
 
 打錯 recipe 名(`just test bogus`)得到 `just` 自己的錯誤、exit 1;給了腳本不認得的
 選項(`just box assemble --bogus`)得到腳本自己的 `unknown option ... (see --help)`、
