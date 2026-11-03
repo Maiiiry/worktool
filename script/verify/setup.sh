@@ -592,9 +592,11 @@ _check_user_content() {
     local _item="$1" _when="$2" _label="$3" _file="$4"
     shift 4
     local _want _got
-    _want="$(printf '%s\n' "$@")"
+    # A sentinel preserves every trailing newline through command substitution.
+    _want="$(printf '%s\n' "$@"; printf '.')"
     USER_CONTENT_STATE="UNREADABLE"
-    _got="$(_user_lines_of "${_file}")" || return 1
+    _got="$(_user_lines_of "${_file}" || exit 1; printf '.')" || return 1
+    _want="${_want%.}" _got="${_got%.}"
     if [[ "${_got}" == "${_want}" ]]; then
         USER_CONTENT_STATE="intact"
         return 0

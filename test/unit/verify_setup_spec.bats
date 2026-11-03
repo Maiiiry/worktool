@@ -1385,3 +1385,10 @@ _degrade_setup_line() {
         assert_output --partial 'expected no line containing'
     done
 }
+
+@test "#713 content: an extra trailing blank line is detected" {
+    _stub_just_setup_writing trailing-blank
+    run "${VERIFY}" 3.7
+    assert_failure 1
+    assert_line 'user-content after-write: ghostty=intact tmux.conf=LOST'
+}

@@ -9,6 +9,11 @@ _rc=0
 _cfg="${XDG_CONFIG_HOME:-${HOME}/.config}/ghostty/config"
 if [[ "${1:-}:${2:-}" == box:setup && -f "${_cfg}" ]]; then
     case "${VERIFY_CORRUPTION}" in
+        trailing-blank) printf '\n' >>"${HOME}/.tmux.conf" ;;
+        missing-newline)
+            _user="$(cat "${HOME}/.tmux.conf")"
+            printf '%s' "${_user}" >"${HOME}/.tmux.conf"
+            ;;
         bare-name) sed -i 's|^command = .*|command = distrobox enter dev|' "${_cfg}" ;;
         no-block)
             # shellcheck source=lib/enter.sh
