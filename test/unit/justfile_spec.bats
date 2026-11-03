@@ -994,3 +994,14 @@ _copy_namespace_docs() {
         fi
     done
 }
+
+@test "#726: README and root header describe six namespaces and only bare test runs all" {
+    run grep -F '裸 `just` 列出六個 namespaces(`test`、`box`、`verify`、`agent`、`worktree`、`job`)' "${REPO_ROOT}/README.md"
+    assert_success
+    run grep -F '只有裸 `just test` 跑全部測試,其他 namespace 的裸指令只列清單' "${REPO_ROOT}/README.md"
+    assert_success
+    run grep -F 'test, box, verify, agent, worktree, job' "${REPO_ROOT}/justfile"
+    assert_success
+    run grep -F 'Only bare `just test` runs everything CI runs; other bare namespaces list' "${REPO_ROOT}/justfile"
+    assert_success
+}

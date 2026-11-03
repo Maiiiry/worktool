@@ -65,11 +65,12 @@ M1-M17 依序、不可跨越,每個 milestone 之間有人類審核 gate;M1、M2
 
 `just` 是 worktool 的使用者通用介面,命令模型比照 `ycpss91255-docker/base`
 (ADR-00000005/10/11):零特例、每個動作都住在一個以動作命名的 namespace
-(`just <namespace> <recipe> [選項]`),裸指令跑最大範圍、子 recipe 與選項只收窄,
+(`just <namespace> <recipe> [選項]`),
+只有裸 `just test` 跑全部測試,其他 namespace 的裸指令只列清單;子 recipe 與選項只收窄,
 justfile 只是薄轉發器,參數驗證與 `--help` 都在腳本(決策與完整對照表見
 [`doc/design.md`](doc/design.md)「決策」)。
 
-裸 `just` 列出 namespaces(`test`、`box`)與各自的一行說明。
+裸 `just` 列出六個 namespaces(`test`、`box`、`verify`、`agent`、`worktree`、`job`)與各自的一行說明。
 
 | 指令 | 說明 |
 |------|------|
