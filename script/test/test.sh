@@ -8,11 +8,12 @@
 #
 #   Host side  - builds the test image if needed, then runs THIS script
 #                back inside a throwaway container with the /source bind
-#                mount. Selected by --lint / --unit / --integration /
-#                --system / --system-real / --acceptance; NO option runs
+#                mount. Selected by --lint / --unit / --matrix /
+#                --integration / --system / --acceptance / --system-real;
+#                NO option runs
 #                all of them, in that order, stopping at the first failure.
 #   Container  - runs the actual gate against the mounted source. Selected
-#                by --ci-lint / --ci-unit / --ci-integration /
+#                by --ci-lint / --ci-unit / --ci-matrix / --ci-integration /
 #                --ci-integration-ghostty / --ci-system / --ci-system-real /
 #                --ci-acceptance (internal).
 #
@@ -502,7 +503,8 @@ _die_bats_failed() {
 # Green requires: the paths exist, every required spec of the tier exists
 # and defines cases (_check_required_specs, before bats runs), no case
 # failed, and the TAP stream passes _verify_tap (plan covers the required
-# cases, nothing skipped). The stream is captured (and echoed) for that.
+# cases, no unexpected skips). Only the three opt-in CPU repro cases may
+# skip in unit when stress is disabled. The stream is captured (and echoed).
 _run_bats_tier() {
     local _tier="$1" _filter="$2"
     shift 2
@@ -615,6 +617,8 @@ Environment:
   TEST_IMAGE             test image tag (default worktool-test:local)
   TEST_IMAGE_PREBUILT=1  skip the test image build (CI loads a prebuilt one)
   WORKTOOL_TEST_JOBS     bats files to run in parallel (default 4)
+  WORKTOOL_STRESS=1      run the three opt-in CPU repro cases (otherwise may skip in unit)
+  WORKTOOL_TEST_RUN_ID   label test containers with worktool.verify-run=<id>
   SYSTEM_REAL_IMAGE      DinD runner image tag (default worktool-system-real:local)
   GHOSTTY_IMAGE          ghostty image tag (default worktool-ghostty:local)
 EOF

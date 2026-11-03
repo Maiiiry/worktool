@@ -11,7 +11,7 @@
 #                    stderr, exit 2, nothing on stdout, no docker call -
 #                    validation happens BEFORE anything runs
 #     (no flag)      everything CI runs, in this order: lint, unit,
-#                    integration, system, acceptance, system-real; the
+#                    matrix, integration, system, acceptance, system-real; the
 #                    run stops at the first failing step
 #     --<tier>       exactly that one gate, nothing else
 #     --integration  BOTH groups of the tier (M3, issue #172): the default
@@ -160,6 +160,14 @@ EOF
     run "${TEST_SH}" -h
     assert_success
     assert_output "${_long}"
+}
+
+@test "test.sh --help documents the stress opt-in and verify run container label" {
+    run "${TEST_SH}" --help
+    assert_success
+    assert_output --partial 'WORKTOOL_STRESS=1      run the three opt-in CPU repro cases (otherwise may skip in unit)'
+    assert_output --partial 'WORKTOOL_TEST_RUN_ID   label test containers with worktool.verify-run=<id>'
+    assert [ ! -e "${FAKE_DOCKER_CALLS}" ]
 }
 
 # --- unknown option: refused before anything runs ---------------------------
