@@ -467,7 +467,7 @@ _compare_52_doc() {
 @test "6.2: evidence documentation requires every cell to be exactly one" {
     local section
     section="$(sed -n '/^  - \[ \] 6\.2 /,/^  - \[ \] 6\.3 /p' "${REPO_ROOT}/doc/acceptance.md")"
-    [[ "${section}" == *'預期看到資訊(每格為 `1`)'* ]]
+    [[ "${section}" == *"預期看到資訊(每格為 \`1\`)"* ]]
     [[ "${section}" != *'每行數字 >= 1'* ]]
 }
 
