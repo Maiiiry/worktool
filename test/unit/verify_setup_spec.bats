@@ -1362,3 +1362,15 @@ _degrade_setup_line() {
         done
     done
 }
+
+@test "#713 3.10: fixed setup and status lines occur exactly once" {
+    local criterion corruption
+    for criterion in 'auto-enter:' 'terminal: ghostty' 'box: dev' 'ghostty config:' '[INFO] distrobox:' 'wrote:' 'unchanged:' 'Ghostty config changed:' 'config:' 'distrobox:' 'link:' 'home:' 'wrapper:'; do
+        export VERIFY_CRITERION="${criterion}"
+        for corruption in omit-line duplicate-line; do
+            _stub_just_setup_writing "${corruption}"
+            run "${VERIFY}" 3.10
+            assert_failure 1
+        done
+    done
+}

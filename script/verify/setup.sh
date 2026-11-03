@@ -1518,6 +1518,43 @@ EOF
     chmod +x "${ITEM_T}/bin/mv"
 }
 
+_expect_atomic_setup() {
+    _expect_lines 3.10 \
+        '[INFO] auto-enter: yes (default)' \
+        '[INFO] terminal: ghostty (user)' \
+        '[INFO] box: dev (default)' \
+        '[INFO] ghostty config: <H>/.config/ghostty/config (config.ghostty absent; legacy fallback)' \
+        '[INFO] distrobox: <D> (absolute path written into the managed command)' \
+        '[INFO] wrote: <H>/.config/worktool/config' || return 1
+    if [[ "$1" == failure ]]; then
+        _expect_lines 3.10 \
+            "[INFO] wrote: <H>/.config/distrobox/distrobox.conf (managed block: ${ISOLATION_BODY})" \
+            '[ERROR] failed to write <H>/.config/ghostty/config'
+    else
+        _expect_lines 3.10 \
+            '[INFO] unchanged: <H>/.config/distrobox/distrobox.conf (managed block already up to date)' \
+            "[INFO] wrote: <H>/.config/ghostty/config (managed block: ${MANAGED_CMD})" \
+            "${GHOSTTY_RELOAD_HINT}"
+    fi
+}
+
+_expect_atomic_status() {
+    _expect_lines 3.10 \
+        'config: <H>/.config/worktool/config' \
+        'auto-enter: yes (default)' \
+        'terminal: ghostty (user)' \
+        'box: dev (default)' \
+        'link: box HOME not recorded - user config not linked yet (run: just box assemble)' \
+        'home: not recorded (run: just box assemble)' || return 1
+    if [[ "$1" == absent ]]; then
+        _expect_lines 3.10 'distrobox: <D> (on PATH; no managed block records one)'
+    else
+        _expect_lines 3.10 \
+            'wrapper: <repo>/script/box/enter.sh (recorded in a managed block: runnable)' \
+            'distrobox: <D> (recorded in a managed block: runnable)'
+    fi
+}
+
 _item_3_10() {
     _setup_path_begin 3.10 || return $?
     local _file="${ITEM_H}/.config/ghostty/config" _mv _count
@@ -1529,8 +1566,7 @@ _item_3_10() {
         just box setup --terminal ghostty || return 1
     printf 'setup-rc=%s\n' "${LAST_RC}"
     [[ "${LAST_RC}" -eq 1 ]] || return 1
-    _expect_lines 3.10 '[ERROR] failed to write <H>/.config/ghostty/config' \
-        '[INFO] wrote: <H>/.config/worktool/config' || return 1
+    _expect_atomic_setup failure || return 1
     _count="$(_count_matching '^\[ERROR\]' "${ITEM_T}/run.out")" || return 1
     [[ "${_count}" -eq 1 ]] || return 1
     cmp -s "${_file}" "${ITEM_T}/original" || return 1
@@ -1538,10 +1574,12 @@ _item_3_10() {
     [[ ! -s "${ITEM_T}/temps" ]] || return 1
     printf 'original=intact temp-files=0\n'
     _path_status 3.10 absent || return 1
+    _expect_atomic_status absent || return 1
     _path_setup || return 1
-    _expect_lines 3.10 "[INFO] wrote: <H>/.config/ghostty/config (managed block: ${MANAGED_CMD})" || return 1
+    _expect_atomic_setup recovery || return 1
     _expect_user_content 3.10 after-recovery || return 1
-    _path_status 3.10 present
+    _path_status 3.10 present || return 1
+    _expect_atomic_status present
 }
 
 _mode_paths() {
