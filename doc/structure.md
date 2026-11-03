@@ -10,6 +10,11 @@
 ```text
 worktool/
 ├── lib/                 共用 bash helper(被 tool/box/script 腳本 source)
+│   ├── config_backup.sh 設定檔備份、重新驗證與還原（5.2 實機驗收）
+│   ├── distrobox_manager.sh 解析 distrobox 使用的容器管理器
+│   ├── guard.sh         驗收前置檢查與拒絕條件
+│   ├── verify_run.sh    驗收執行、逾時與行程群組清理
+│   ├── realbox_interrupt.sh 實機驗收中斷處理與復原
 │   ├── log.sh           日誌 helper:log_info / log_warn / log_error(寫入 stderr)
 │   ├── manifest.sh      盒子清單 helper:manifest_name / manifest_image / manifest_validate
 │   ├── approval.sh      milestone-gate 核准判斷(純函式,不呼叫 GitHub API):approval_evaluate / approval_is_human_approval(#187)
@@ -82,7 +87,18 @@ worktool/
 │   │   ├── hook/                 .agents/hook/ 每支 hook 與 lib 的 spec(以 stdin JSON 驅動,跟 Claude Code 呼叫方式相同；含 Stop 回覆語言檢查 #281)
 │   │   ├── script/               .agents/script/ 的 wait-pr-ci.sh / watch-user-replies.sh spec(gh 以 PATH stub 取代)
 │   │   └── fixture/
-│   │       └── entry_driver.sh   在隔離 shell 內驅動 system-real-entry.sh 的單一函式
+│   │       ├── entry_driver.sh   在隔離 shell 內驅動 system-real-entry.sh 的單一函式
+│   │       ├── config_race.sh    設定檔並行寫入測試驅動
+│   │       ├── realbox_tool.sh   實機驗收工具替身
+│   │       ├── realbox_cold_tool.sh 冷啟動驗收工具替身
+│   │       ├── realbox_matrix_just.sh 實機驗收矩陣的 just 替身
+│   │       ├── realbox_shim.sh   實機驗收共用替身
+│   │       ├── verify_setup_just.sh setup 驗收的 just 替身
+│   │       ├── verify_signal.js  驗收訊號測試驅動
+│   │       ├── workflow_run.mjs  Workflow 測試驅動
+│   │       └── adr/             ADR 格式負向測試資料
+│   │           ├── 9999-invariant-missing-guard.md 缺少守門案例的 ADR
+│   │           └── 9999-invariant-missing-section.md 缺少必要章節的 ADR
 │   ├── matrix/          完整乘積矩陣(bats):CI 必跑、不納入本機推送前 unit gate
 │   │   ├── enforce_milestone_gate_approval_spec.bats
 │   │   └── enforce_no_attribution_spec.bats  no-attribution hook 的完整署名×位置×來源×包裝矩陣(#270)
@@ -100,6 +116,9 @@ worktool/
 │   ├── acceptance/      交付/驗收測試(bats):跑交付的公開入口
 │   │   └── m2_selfcheck_spec.bats   script/test/selfcheck.sh 對交付 repo 印 ALL PASS(含負向)
 │   └── helper/          bats 共用 helper
+│       ├── diagnostics.bash 失敗診斷輸出共用 helper
+│       ├── interrupt_load.bash CPU 負載與中斷重現 helper
+│       ├── realbox_window.bash 實機終端視窗驗收 helper
 │       ├── common.bash  路徑常數 + bats-support / bats-assert 載入
 │       └── hook.bash    hook spec 共用:hook_json / run_hook / disable_line
 ├── dockerfile/
@@ -113,6 +132,7 @@ worktool/
 │   ├── enter.md         終端自動進盒:just box setup / status 的選項、設定檔、受管區塊、範例 log
 │   ├── structure.md     本文件
 │   ├── acceptance.md    驗收清單(通用指令 + 各 milestone 的人類驗收項目)
+│   ├── evidence/        milestone 驗收證據（不存放 review 或協調筆記）
 │   ├── agent/           給 agent skill 讀的設定:issue-tracker.md / triage-labels.md / domain.md
 │   └── diagram/         README 嵌入的 draw.io 圖;`.drawio.svg` 同時是圖與可編輯原始檔(單一事實來源,
 │       │                純 SVG 文字、無 foreignObject,GitHub 可直接顯示;以 Docker 內的 drawio 匯出,host 不裝 draw.io)

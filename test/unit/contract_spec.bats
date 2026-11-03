@@ -226,3 +226,23 @@ _checks_per_promise() {
     assert_success
     assert_line "unit/$(basename -- "${BATS_TEST_FILENAME}")"
 }
+
+@test "#724: structure directory tree includes the M3 helpers, evidence and unit fixtures" {
+    local tree section name path
+    tree="$(sed -n '/^## 目錄結構/,/^```$/p' "${REPO_ROOT}/doc/structure.md")"
+    section="$(sed -n '/^├── lib\//,/^├── box\//p' <<<"${tree}")"
+    for name in config_backup.sh distrobox_manager.sh guard.sh verify_run.sh realbox_interrupt.sh; do
+        [[ "${section}" == *"── ${name} "* ]]
+    done
+    section="$(sed -n '/^│   └── helper\//,/^├── dockerfile\//p' <<<"${tree}")"
+    for name in diagnostics.bash interrupt_load.bash realbox_window.bash; do
+        [[ "${section}" == *"── ${name} "* ]]
+    done
+    section="$(sed -n '/^├── doc\//,/^├── .agents\//p' <<<"${tree}")"
+    [[ "${section}" == *'── evidence/ '* ]]
+    section="$(sed -n '/^│   │   └── fixture\//,/^│   ├── matrix\//p' <<<"${tree}")"
+    while IFS= read -r path; do
+        name="${path##*/}"
+        [[ "${section}" == *"── ${name} "* ]]
+    done < <(find "${REPO_ROOT}/test/unit/fixture" -type f | sort)
+}
