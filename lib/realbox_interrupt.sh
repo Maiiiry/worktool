@@ -124,14 +124,15 @@ _54_event() {
 }
 
 _54_assert() {
-    local capture="$1" dir="$2" rc="$3" expected="$4" check gone=0
+    local capture="$1" dir="$2" rc="$3" expected="$4" check gone=0 negative_rc=0
     [[ "${rc}" -eq "${expected}" ]] || return 1
     for check in 'cleanup-rc=0' 'box-state after-cleanup: home=0 tmux=0' \
         'host-state after-cleanup: new=0'; do
         grep -qFx "${check}" "${capture}" || return 1
     done
     # Do not accept a success line followed by a failed cleanup report.
-    if grep -qE '^cleanup-rc=[1-9]|^posted=' "${capture}"; then return 1; fi
+    grep -qE '^cleanup-rc=[1-9]|^posted=' "${capture}" || negative_rc=$?
+    [[ "${negative_rc}" -eq 1 ]] || return 1
     guard_box_exists "${BOX}" "${TIMEOUT_SHORT}" || gone=$?
     [[ "${gone}" -eq 1 ]] || return 1
     local -a homes=("${dir}"/wt-m3-51.*)

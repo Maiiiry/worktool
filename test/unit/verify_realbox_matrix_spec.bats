@@ -89,6 +89,27 @@ STUB
     [[ "${stderr}" == *'[ERROR] interrupt cleanup: manual recovery:'* ]]
 }
 
+@test "#710: unreadable negative capture check cannot pass a cell" {
+    export MATRIX_REAL_GREP
+    MATRIX_REAL_GREP="$(command -v grep)"
+    cat >"${MATRIX_STATE}/bin/grep" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == -qE && "${2:-}" == '^cleanup-rc=[1-9]|^posted=' ]]; then
+    printf 'capture read failed\n' >&2
+    exit 2
+fi
+exec "${MATRIX_REAL_GREP}" "$@"
+STUB
+    chmod +x "${MATRIX_STATE}/bin/grep"
+    run "${REALBOX}" --allow-real-box 5.4
+    assert_failure 1
+    assert_line 'capture read failed'
+    assert_line --partial 'interrupt assemble INT: FAIL ('
+    assert_line 'interrupt-matrix: FAIL'
+    refute_output --partial 'posted=0 PASS'
+}
+
 _matrix_failed_cell_resident() {
     _matrix_child_stub
     sed -i '/^sleep "${MATRIX_READY_DELAY/,$d' "${MATRIX_STATE}/child"
