@@ -519,14 +519,13 @@ item_6_2() {
 # The codex verdict chain. Six PRs must end on a "mergeable" verdict; the
 # four that were re-reviewed after the quota came back must end on "blocked",
 # each pointing at exactly one follow-up issue, which exactly one merged PR
-# closes, and that PR must itself end on "mergeable".
+# closes, and that PR must itself end on "mergeable". Both the follow-up issue
+# and the fix PR must match the fixed pairing table in doc/acceptance.md.
 #
-# "Each" is a claim about FOUR follow-ups and FOUR fix PRs, so the tracking is
-# kept across the whole item, not reset per blocked PR. Reset per PR, one
-# issue and one PR could answer for all four: four identical rows, each
-# internally consistent, would print `ok` four times while three of the four
-# blockers were never recorded anywhere. The two sets are therefore collected
-# over the whole item and their sizes printed and compared.
+# Reusing one valid issue/fix-PR pair for all four blocked PRs makes three rows
+# print `BAD` because they violate the fixed pairings. The distinct sets are
+# also kept across the whole item, not reset per blocked PR, to report and
+# check that the evidence covers FOUR follow-ups and FOUR fix PRs.
 
 _ITEM_6_3_MERGEABLE_PRS=(156 165 166 167 168 169)
 _ITEM_6_3_BLOCKED_PRS=(152 153 154 155)
