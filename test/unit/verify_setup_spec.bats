@@ -236,7 +236,7 @@ _stub_mktemp_dir_then_fail() {
 #              while the removal run still reports removing one
 _stub_just_setup_writing() {
     export VERIFY_REAL_JUST="${REAL_JUST}" VERIFY_PRODUCT_LIB="${REPO_ROOT}/lib/enter.sh"
-    export VERIFY_CORRUPTION="$1"
+    export VERIFY_CORRUPTION="$1" VERIFY_CRITERION="${2:-}"
     _stub just '#!/usr/bin/env bash' 'set -euo pipefail' \
         "exec bash $(printf '%q' "${BATS_TEST_DIRNAME}/fixture/verify_setup_just.sh") \"\$@\""
 }
@@ -1338,11 +1338,9 @@ _degrade_setup_line() {
 
 @test "#713 3.1: every documented dry-run line occurs exactly once" {
     local criterion corruption
-    local -x VERIFY_CRITERION
     for criterion in 'ghostty config:' 'distrobox.conf (managed block:'; do
-        export VERIFY_CRITERION="${criterion}"
         for corruption in omit-line duplicate-line; do
-            _stub_just_setup_writing "${corruption}"
+            _stub_just_setup_writing "${corruption}" "${criterion}"
             run "${VERIFY}" 3.1
             assert_failure 1
             assert_output --partial 'expected exactly one line'
@@ -1352,11 +1350,9 @@ _degrade_setup_line() {
 
 @test "#713 3.5: refusal product lines occur exactly once" {
     local criterion corruption
-    local -x VERIFY_CRITERION
     for criterion in 'auto-enter:' 'terminal: ghostty' 'terminal detected:' 'box: dev' 'ghostty config:' '[ERROR] distrobox:'; do
-        export VERIFY_CRITERION="${criterion}"
         for corruption in omit-line duplicate-line; do
-            _stub_just_setup_writing "${corruption}"
+            _stub_just_setup_writing "${corruption}" "${criterion}"
             run "${VERIFY}" 3.5
             assert_failure 1
             assert_output --partial 'expected exactly one line'
@@ -1366,11 +1362,9 @@ _degrade_setup_line() {
 
 @test "#713 3.10: fixed setup and status lines occur exactly once" {
     local criterion corruption
-    local -x VERIFY_CRITERION
     for criterion in 'auto-enter:' 'terminal: ghostty' 'box: dev' 'ghostty config:' '[INFO] distrobox:' 'wrote:' 'unchanged:' 'Ghostty config changed:' 'config:' 'distrobox:' 'link:' 'home:' 'wrapper:'; do
-        export VERIFY_CRITERION="${criterion}"
         for corruption in omit-line duplicate-line; do
-            _stub_just_setup_writing "${corruption}"
+            _stub_just_setup_writing "${corruption}" "${criterion}"
             run "${VERIFY}" 3.10
             assert_failure 1
         done
@@ -1379,10 +1373,8 @@ _degrade_setup_line() {
 
 @test "#713 3.3: removal rejects tmux decisions and removal messages" {
     local message
-    local -x VERIFY_CRITERION
     for message in '[INFO] tmux: host (default)' '[INFO] removed: /throwaway/.tmux.conf (managed block: old)'; do
-        export VERIFY_CRITERION="${message}"
-        _stub_just_setup_writing tmux-message
+        _stub_just_setup_writing tmux-message "${message}"
         run "${VERIFY}" 3.3
         assert_failure 1
         assert_output --partial 'expected no line containing'
@@ -1419,11 +1411,9 @@ _degrade_setup_line() {
 
 @test "#713 diagnostics: refusal checks the setup recipe name and exit code" {
     local item corruption
-    local -x VERIFY_CRITERION
-    export VERIFY_CRITERION='error: Recipe'
     for item in 3.5 3.10; do
         for corruption in omit-line duplicate-line; do
-            _stub_just_setup_writing "${corruption}"
+            _stub_just_setup_writing "${corruption}" 'error: Recipe'
             run "${VERIFY}" "${item}"
             assert_failure 1
         done
