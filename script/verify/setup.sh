@@ -959,6 +959,8 @@ _item_3_3() {
     # decision line here. An implementation that resolved one anyway would
     # be doing work it must not need.
     _refute_line 3.3 '[INFO] distrobox:' || _bad=1
+    _refute_line 3.3 '[INFO] tmux:' || _bad=1
+    _refute_line 3.3 '.tmux.conf' || _bad=1
     printf 'rc=%s\n' "${_remove_rc}"
 
     _blocks="$(_count_matching 'BEGIN worktool managed block' "${ITEM_H}/.config/ghostty/config")" || return 1

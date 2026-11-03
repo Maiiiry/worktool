@@ -1374,3 +1374,14 @@ _degrade_setup_line() {
         done
     done
 }
+
+@test "#713 3.3: removal rejects tmux decisions and removal messages" {
+    local message
+    for message in '[INFO] tmux: host (default)' '[INFO] removed: /throwaway/.tmux.conf (managed block: old)'; do
+        export VERIFY_CRITERION="${message}"
+        _stub_just_setup_writing tmux-message
+        run "${VERIFY}" 3.3
+        assert_failure 1
+        assert_output --partial 'expected no line containing'
+    done
+}

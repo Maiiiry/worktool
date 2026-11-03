@@ -18,6 +18,9 @@ if [[ "${1:-}:${2:-}" == box:setup && -f "${_cfg}" ]]; then
             ;;
     esac
 fi
+if [[ "${1:-}:${2:-}" == box:setup && " $* " == *' --auto-enter no '* && "${VERIFY_CORRUPTION}" == tmux-message ]]; then
+    printf '%s\n' "${VERIFY_CRITERION}" >>"${_out}"
+fi
 while IFS= read -r _line; do
     if [[ "${VERIFY_CORRUPTION}" == bare-name && "${_line}" == *'(managed block: command = '* ]]; then
         _cmd="${_line#*'(managed block: '}"
