@@ -17,15 +17,18 @@ setup() {
 }
 
 @test "#723: a non-init-log ancestor that is not a directory reports its path generically" {
-    local BOX=dev
-    # shellcheck source=script/verify/config_backup_paths.sh
-    source "${REPO_ROOT}/script/verify/config_backup_paths.sh"
-    export XDG_CONFIG_HOME="${HOME}/blocked/missing"
     printf 'not a directory\n' >"${HOME}/blocked"
-    cfgbk_paths
     cfgbk_dir_create
 
-    run --separate-stderr cfgbk_backup_body
+    run --separate-stderr bash -c '
+        set -euo pipefail
+        source "$1/lib/guard.sh"
+        source "$1/script/verify/config_backup_paths.sh"
+        BOX=dev
+        export XDG_CONFIG_HOME="${HOME}/blocked/missing"
+        cfgbk_paths
+        cfgbk_backup_body
+    ' _ "${REPO_ROOT}"
 
     assert_failure 1
     assert_output ''
