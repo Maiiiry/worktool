@@ -139,6 +139,42 @@ STUB
     refute_output --partial 'posted=0 PASS'
 }
 
+@test "#710: unreadable survivor stat fails the stop and preserves manual recovery evidence" {
+    _matrix_failed_cell_resident
+    cat >>"${MATRIX_STATE}/repo/lib/realbox_interrupt.sh" <<'STUB'
+read() {
+    if [[ "$#" -eq 2 && "$1" == -r && "$2" == row ]]; then
+        builtin read "$@" || return $?
+        local hidden_status hidden_parent hidden_group hidden_session hidden_rest child_pid
+        IFS=' ' builtin read -r hidden_status hidden_parent hidden_group hidden_session hidden_rest <<<"${row##*) }"
+        if [[ -f "${MATRIX_STATE}/child.pid" ]]; then
+            child_pid="$(<"${MATRIX_STATE}/child.pid")"
+            if [[ "${hidden_session}" == "${child_pid}" ]]; then
+                touch "${MATRIX_STATE}/stat-hidden"
+                return 1
+            fi
+        fi
+        return 0
+    fi
+    builtin read "$@"
+}
+STUB
+    local stderr="" pid evidence
+    run --separate-stderr "${REALBOX}" --allow-real-box 5.4
+    assert_failure 1
+    assert_line 'interrupt-matrix: FAIL'
+    [ -f "${MATRIX_STATE}/stat-hidden" ]
+    read -r pid <"${MATRIX_STATE}/child.pid"
+    local -a records=("${TMPDIR}"/wt-m3-54.*/cleanup.pid)
+    [ -f "${records[0]}" ]
+    [ "$(cat "${records[0]}")" = "${pid}" ]
+    evidence="${records[0]%/cleanup.pid}"
+    [ -f "${evidence}/assemble-INT/capture" ]
+    [[ "${stderr}" == *"[ERROR] interrupt cleanup: kept evidence=${evidence};"* ]]
+    [[ "${stderr}" == *'[ERROR] interrupt cleanup: manual recovery:'* ]]
+    refute_output --partial 'posted=0 PASS'
+}
+
 _matrix_failed_cell_resident() {
     _matrix_child_stub
     sed -i '/^sleep "${MATRIX_READY_DELAY/,$d' "${MATRIX_STATE}/child"

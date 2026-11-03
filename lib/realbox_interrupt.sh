@@ -60,7 +60,10 @@ _54_keep_recovery() {
 _54_session_groups() {
     local file row status _parent group session rest
     for file in /proc/[0-9]*/stat; do
-        if ! IFS= read -r row 2>/dev/null <"${file}"; then continue; fi
+        if ! IFS= read -r row 2>/dev/null <"${file}"; then
+            [[ ! -d "${file%/stat}" ]] || return 1
+            continue
+        fi
         read -r status _parent group session rest <<<"${row##*) }"
         if [[ "${session}" == "$1" && "${status}" != Z && "${status}" != X ]]; then
             printf '%s\n' "${group}"
