@@ -1425,3 +1425,10 @@ _degrade_setup_line() {
         done
     done
 }
+
+@test "#713 normalization: setup 3.7 prints distrobox placeholders" {
+    run "${REAL_JUST}" --justfile "${REPO_ROOT}/justfile" verify setup 3.7
+    assert_success
+    assert_line '[INFO] distrobox: <D> (absolute path written into the managed command)'
+    assert_line "[INFO] wrote: <H>/.config/ghostty/config (managed block: ${MANAGED_EXPECTED})"
+}
