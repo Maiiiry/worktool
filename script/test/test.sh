@@ -146,6 +146,7 @@ _required_specs() {
                 unit/status_spec.bats \
                 unit/link_spec.bats \
                 unit/config_spec.bats \
+                unit/config_mutation_drift_spec.bats \
                 unit/config_mutation_spec.bats \
                 unit/config_owner_spec.bats \
                 unit/config_validate_spec.bats \
@@ -800,7 +801,6 @@ lib/commit_attribution.sh|test/unit/commit_attribution_spec.bats
 lib/commit_email.sh|test/unit/commit_email_spec.bats
 lib/commit_refs.sh|test/unit/commit_refs_spec.bats
 lib/config.sh|test/unit/config_spec.bats
-lib/config.sh|test/unit/config_mutation_spec.bats
 lib/config.sh|test/unit/verify_setup_spec.bats
 lib/config.sh|test/unit/verify_realbox_spec.bats
 lib/config_backup.sh|test/unit/config_backup_spec.bats
@@ -981,7 +981,7 @@ _add_changed_spec() {
 # Single source for repository-wide guards; optional files follow the checkout.
 _guard_specs() {
     local _spec
-    for _spec in config_owner config_mutation config_validate config_graph \
+    for _spec in config_owner config_mutation_drift config_validate config_graph \
         adr ci_gate justfile test_changed test_sh contract diagram agent_config script_layout \
         verify_ui; do
         [[ ! -f "${REPO_ROOT}/test/unit/${_spec}_spec.bats" ]] \
@@ -1026,6 +1026,23 @@ _add_changed_guards() {
     esac
 }
 
+# The rows describe properties of lib/config.sh and the owner modules' cases.
+# Keep their inputs in one place; small fixture checkouts may omit this suite.
+_mutation_inputs() (
+    local _helper="${REPO_ROOT}/test/helper/config_mutation_rows.bash"
+    if [[ ! -f "${_helper}" || ! -f "${REPO_ROOT}/test/unit/config_mutation_spec.bats" ]]; then
+        return 0
+    fi
+    # shellcheck source=test/helper/config_mutation_rows.bash
+    source "${REPO_ROOT}/test/helper/config_mutation_rows.bash"
+    {
+        printf '%s\n' lib/config.sh
+        _owner_rows | cut -d'|' -f1
+        { _rows | cut -d'|' -f6; _owner_rows | cut -d'|' -f3; } |
+            tr ';' '\n' | awk -F'@' '$1 != "-" && $1 != "" { print "test/" $1 }'
+    } | sort -u
+)
+
 _is_test_infrastructure() {
     case "$1" in
         script/test/*|dockerfile/Dockerfile.*|Dockerfile|Dockerfile.*|justfile*|test/helper/*) return 0 ;;
@@ -1064,7 +1081,7 @@ _run_changed_tiers() {
 }
 
 _run_changed() {
-    local _base="$1" _list _path _spec _mapped _full_fallback=0
+    local _base="$1" _list _path _spec _mapped _mutation_paths _full_fallback=0
     local _full_unit=0 _full_matrix=0 _full_integration=0
     local _full_system=0 _full_acceptance=0
     local _ghostty=0 _system_real=0 _guards_selected=0
@@ -1074,8 +1091,21 @@ _run_changed() {
         _info "changed-file diff unreadable; verification left to CI"
         _full_fallback=1
     fi
+    _mutation_paths="$(_mutation_inputs)"
     while IFS= read -r _path; do
         _add_changed_guards "${_path}"
+        case "${_path}" in
+            test/helper/config_mutation_rows.bash|test/helper/config_mutation_mutants.bash)
+                _add_changed_spec test/unit/config_mutation_drift_spec.bats
+                _add_changed_spec test/unit/config_mutation_spec.bats
+                ;;
+            *)
+                if [[ "${_path}" == test/unit/config_mutation_spec.bats ]] \
+                    || grep -qxF "${_path}" <<<"${_mutation_paths}"; then
+                    _add_changed_spec test/unit/config_mutation_spec.bats
+                fi
+                ;;
+        esac
         if [[ "${_path}" == dockerfile/Dockerfile.ghostty ]]; then
             _info "此改動由 CI 的 integration 驗證：${_path}（測試基礎設施變更；專用 runner）"
             continue
