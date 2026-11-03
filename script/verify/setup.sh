@@ -155,6 +155,12 @@ DISTROBOX_LINES_SEEN=() # 3.6: the `distrobox:` line each case actually got
 # The real setup dry-run guard detects drift without redefining this criterion.
 MANAGED_CMD="command = '<repo>/script/box/enter.sh' --distrobox '<D>' --box 'dev'"
 
+# Pin the isolation body independently of the product.
+ISOLATION_BODY="$(cat <<'EOF'
+_worktool_n=; _worktool_v=; for _worktool_a in "$@"; do if [ -n "${_worktool_v}" ]; then [ "${_worktool_v}" = n ] && [ -n "${_worktool_a}" ] && _worktool_n="${_worktool_a}"; _worktool_v=; continue; fi; case "${_worktool_a}" in --|-e|--exec) break ;; -n|--name) _worktool_v=n ;; -a|--additional-flags) _worktool_v=a ;; -*) ;; *) _worktool_n="${_worktool_a}" ;; esac; done; [ "${_worktool_n:-${DBX_CONTAINER_NAME:-}}" != 'dev' ] || unset TMUX TMUX_PANE; unset _worktool_a _worktool_n _worktool_v
+EOF
+)"
+
 # The line `_apply_no_terminal` logs instead of writing a profile (item
 # 3.8). The BARE `distrobox` in it is deliberate and is pinned here as
 # such: it is a command for the user to type in their own interactive
@@ -775,8 +781,10 @@ _item_3_1() {
         '[INFO] terminal: ghostty (default)' \
         '[INFO] terminal detected: ghostty (ghostty executable <G>)' \
         '[INFO] box: dev (default)' \
+        '[INFO] ghostty config: <H>/.config/ghostty/config (config.ghostty absent; legacy fallback)' \
         '[INFO] distrobox: <D> (absolute path written into the managed command)' \
         '[INFO] dry-run: would write <H>/.config/worktool/config' \
+        "[INFO] dry-run: would write <H>/.config/distrobox/distrobox.conf (managed block: ${ISOLATION_BODY})" \
         "[INFO] dry-run: would write <H>/.config/ghostty/config (managed block: ${MANAGED_CMD})" \
         || _bad=1
     printf 'rc=%s\n' "${LAST_RC}"

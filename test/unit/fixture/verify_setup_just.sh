@@ -24,6 +24,10 @@ while IFS= read -r _line; do
         _cmd="${_cmd%')'}"
         _line="${_line//"${_cmd}"/command = distrobox enter dev}"
     fi
+    if [[ -n "${VERIFY_CRITERION:-}" && "${_line}" == *"${VERIFY_CRITERION}"* ]]; then
+        [[ "${VERIFY_CORRUPTION}" != omit-line ]] || continue
+        if [[ "${VERIFY_CORRUPTION}" == duplicate-line ]]; then printf '%s\n' "${_line}"; fi
+    fi
     printf '%s\n' "${_line}"
 done <"${_out}"
 exit "${_rc}"

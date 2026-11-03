@@ -1336,3 +1336,16 @@ _degrade_setup_line() {
     assert_failure 3
     assert_line '[UNAVAILABLE] setup.sh: distrobox not found on PATH'
 }
+
+@test "#713 3.1: every documented dry-run line occurs exactly once" {
+    local criterion corruption
+    for criterion in 'ghostty config:' 'distrobox.conf (managed block:'; do
+        export VERIFY_CRITERION="${criterion}"
+        for corruption in omit-line duplicate-line; do
+            _stub_just_setup_writing "${corruption}"
+            run "${VERIFY}" 3.1
+            assert_failure 1
+            assert_output --partial 'expected exactly one line'
+        done
+    done
+}
