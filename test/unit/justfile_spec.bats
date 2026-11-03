@@ -953,7 +953,7 @@ _copy_namespace_docs() {
             default)
                 sed -i 's|@just --justfile.*--list|@echo changed|' "${COPY}/script/agent/justfile.agent"
                 ;;
-            design) sed -i 's/`job` 有 `help`/`job` 有 `help`(alias `h`)/' "${COPY}/doc/design.md" ;;
+            design) sed -i "s/\`job\` 有 \`help\`/\`job\` 有 \`help\`(alias \`h\`)/" "${COPY}/doc/design.md" ;;
         esac
         run _structure_namespace_gaps "${COPY}"
         assert_failure
