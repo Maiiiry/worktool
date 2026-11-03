@@ -530,6 +530,9 @@ item_6_2() {
 
 _ITEM_6_3_MERGEABLE_PRS=(156 165 166 167 168 169)
 _ITEM_6_3_BLOCKED_PRS=(152 153 154 155)
+# Fixed blocked-PR pairings in doc/acceptance.md item 6.3.
+declare -A _ITEM_6_3_FOLLOW_UPS=([152]=163 [153]=164 [154]=162 [155]=161)
+declare -A _ITEM_6_3_FIX_PRS=([152]=166 [153]=165 [154]=169 [155]=168)
 
 # Verdict line of the last [codex] comment on issue/PR $1 into variable $2.
 # Return codes are kept apart on purpose:
@@ -656,7 +659,9 @@ _item_6_3_blocked_pr() {
     _fix_all["${_fix_pr}"]=1
     _ok=BAD
     if [[ "${_orig}" == blocked && "${_fixed}" == mergeable \
-        && "${#_follow_seen[@]}" -eq 1 && "${#_pr_lines[@]}" -eq 1 ]]; then
+        && "${#_follow_seen[@]}" -eq 1 && "${#_pr_lines[@]}" -eq 1 \
+        && "${_follow}" == "${_ITEM_6_3_FOLLOW_UPS[${_pr}]}" \
+        && "${_fix_pr}" == "${_ITEM_6_3_FIX_PRS[${_pr}]}" ]]; then
         _ok=ok
     else
         _fail=1
