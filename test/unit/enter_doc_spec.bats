@@ -12,3 +12,14 @@ load "${BATS_TEST_DIRNAME}/../helper/common"
     run grep -En '/home/me/\.config/ghostty/config([^.]|$)' <<<"${_examples}"
     assert_failure 1
 }
+
+@test "enter docs: example logs explicitly disclose omitted setup diagnostics" {
+    local _intro
+    _intro="$(sed -n '/^### 範例 log/,/^預設（/p' "${REPO_ROOT}/doc/enter.md")"
+    run printf '%s\n' "${_intro}"
+    assert_output --partial '以下 log 均為節錄'
+    assert_output --partial 'distrobox.conf'
+    assert_output --partial '`wrote:`／`unchanged:`'
+    assert_output --partial '`ghostty config:`'
+    assert_output --partial 'Ghostty reload 提示'
+}

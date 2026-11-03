@@ -280,6 +280,11 @@ round 1 拿掉的「裸名字 fallback」同一類問題:**已知壞掉的半套
 
 ### 範例 log
 
+以下 log 均為節錄，省略部分診斷行：例如 distrobox.conf 的
+`wrote:`／`unchanged:`、`ghostty config:`，以及設定變更後的 Ghostty reload 提示。
+實際執行時仍會依設定與檔案狀態印出這些行；reload 提示只在 Ghostty 設定變更時出現。
+除另有說明外，以下 Ghostty 範例均沿用 `config.ghostty` 已存在的前提。
+
 預設（`config.ghostty` 已存在；PATH 上有 `/usr/bin/ghostty`,distrobox 在 `~/.local/bin`):
 
 ```text
