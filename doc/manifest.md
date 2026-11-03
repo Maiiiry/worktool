@@ -820,7 +820,7 @@ just test lint          # ShellCheck(*.sh + *.bats)
 # 底層:./script/test/test.sh --lint
 just test unit          # 單元 bats(test/unit/)
 # 底層:./script/test/test.sh --unit
-just test matrix        # 全產品矩陣 bats(test/matrix/)
+just test matrix        # 完整乘積矩陣 bats(test/matrix/)
 # 底層:./script/test/test.sh --matrix
 just test integration   # 整合 bats(test/integration/;兩組:預設組 + ghostty 組,後者在 ubuntu:26.04 的 ghostty 映像內,不需顯示器)
 # 底層:./script/test/test.sh --integration
@@ -851,7 +851,7 @@ integration、system、acceptance、system-real,遇到第一個失敗即停,和 
   - `just test unit`:所有測項 `ok`(涵蓋缺 image / 缺名稱 / 檔案不存在 / 純空白名稱 /
     單或雙引號內純空白 image / 引號不成對的 image / image 出現在區段之前 / 多區段
     等案例),結尾 `[ci] unit bats OK`。
-  - `just test matrix`:所有測項 `ok`(全產品矩陣),結尾 `[ci] matrix bats OK`。
+  - `just test matrix`:所有測項 `ok`(完整乘積矩陣),結尾 `[ci] matrix bats OK`。
   - `just test integration`:所有測項 `ok`(含「無效 manifest(缺 image、引號不成對)
     絕不呼叫 distrobox」負向測試),結尾 `[ci] integration bats OK`。
   - `just test system`:所有測項 `ok`(真實 distrobox 1.8.2.5 把 `box/dev.ini` 解析成
