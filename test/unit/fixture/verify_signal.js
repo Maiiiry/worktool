@@ -7,6 +7,8 @@ const timer = setInterval(() => {
     if (fs.existsSync(process.env.SIGNAL_STATE + '/ready')) {
         clearInterval(timer);
         process.kill(-p.pid, 'SIG' + process.argv[2]);
+        // Give signal handling and restore their full budget after startup.
+        watchdog.refresh();
     } else if (Date.now() > deadline) {
         clearInterval(timer);
         process.kill(-p.pid, 'SIGKILL');

@@ -198,7 +198,14 @@ PROBE
 }
 
 @test "5.2: group INT during apply reports cleanup and exits normally" {
-    _assert_group_interrupt INT 130 assemble 5.2
+    _prepare_group_interrupt assemble
+    # Startup and restore each fit their own deadline, but together exceed
+    # the signal driver's old six-second budget measured from spawn.
+    sed -i '/touch .*\/ready"/i\    sleep 3' "${STUBS}/just"
+    sed -i '/echo cleanup >>/a\    sleep 3' "${STUBS}/distrobox"
+    run node "${BATS_TEST_DIRNAME}/fixture/verify_signal.js" INT bash \
+        "${REALBOX}" --allow-real-box 5.2
+    _check_group_interrupt 130 0
 }
 
 @test "5.1: interrupted cleanup failure takes precedence over signal status" {
