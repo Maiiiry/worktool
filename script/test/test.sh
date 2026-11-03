@@ -1034,7 +1034,7 @@ _mutation_inputs() (
         return 0
     fi
     # shellcheck source=test/helper/config_mutation_rows.bash
-    source "${_helper}"
+    source "${REPO_ROOT}/test/helper/config_mutation_rows.bash"
     {
         printf '%s\n' lib/config.sh
         _owner_rows | cut -d'|' -f1
