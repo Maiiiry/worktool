@@ -1005,3 +1005,12 @@ _copy_namespace_docs() {
     run grep -F 'Only bare `just test` runs everything CI runs; other bare namespaces list' "${REPO_ROOT}/justfile"
     assert_success
 }
+
+@test "#726: README command table includes matrix in all tests and tier selection" {
+    run grep -E '^\| `just test` \|' "${REPO_ROOT}/README.md"
+    assert_success
+    assert_output --partial 'lint、unit、matrix、integration、system、acceptance、system-real'
+    run grep -E '^\| `just test unit`' "${REPO_ROOT}/README.md"
+    assert_success
+    assert_output --partial '`matrix`'
+}
