@@ -915,3 +915,19 @@ EOF
     assert_success
     assert_equal "$(_listed_names)" "codex default "
 }
+
+@test "#724: structure namespace rules match module defaults, help and working directories" {
+    local section row
+    section="$(sed -n '/^## 使用者介面:/,/^| 指令 |/p' "${REPO_ROOT}/doc/structure.md")"
+    while IFS= read -r row; do
+        [[ "${section}" == *"${row}"* ]]
+    done <<'ROWS'
+| `test` | `script/test/` | 跑全部 CI 步驟 | `help`（alias `h`） | `'../..'` |
+| `box` | `script/box/` | 列出動詞 | `help`（alias `h`） | `'../..'` |
+| `verify` | `script/verify/` | 列出動詞 | `help`（alias `h`） | `'../..'` |
+| `agent` | `script/agent/` | 列出動詞 | 無；各動詞用 `--help` | `'../..'` |
+| `worktree` | `.agents/script/worktree/` | 列出動詞 | 無；各動詞用 `--help` | `'../../..'` |
+| `job` | `.agents/script/` | 列出動詞 | `help`（無 alias `h`） | `'../..'` |
+ROWS
+    [[ "${section}" != *'每個命名空間有自己的 `default` 與 `help`'* ]]
+}
