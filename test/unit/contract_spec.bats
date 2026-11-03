@@ -320,3 +320,10 @@ _check_evidence_tree() {
     assert_output --partial "test/unit/verify_all_spec.bats"
     assert_output --partial "test/unit/verify_gate_spec.bats"
 }
+
+@test "#728: latency index note cites the settled ADR 0003 decision" {
+    run _section 6
+    assert_success
+    assert_output --regexp '進盒 < 300 ms.*已.*ADR 0003'
+    refute_output --partial "待 #181 定案"
+}
