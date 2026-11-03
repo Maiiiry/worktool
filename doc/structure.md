@@ -133,6 +133,15 @@ worktool/
 │   ├── structure.md     本文件
 │   ├── acceptance.md    驗收清單(通用指令 + 各 milestone 的人類驗收項目)
 │   ├── evidence/        驗收檢查程式、fixture 與證據，含既有 review 紀錄（新增審查紀錄改放 PR 留言或 .agents/state/）
+│   │   ├── README.md    驗收檢查程式與歷史調查說明
+│   │   ├── 363-review-round-1.md  既有審查紀錄
+│   │   ├── 607-review-round-1.md  既有審查紀錄
+│   │   ├── tdd.sh       TDD 驗收檢查入口
+│   │   ├── tdd.awk      RED／GREEN 順序判定
+│   │   ├── verify-image.md  驗收映像證據
+│   │   └── negative/    TDD 判定的負向 fixture
+│   │       ├── empty-red-block.md  空 RED 區塊
+│   │       └── wrong-order.md  RED／GREEN 順序顛倒
 │   ├── agent/           給 agent skill 讀的設定:issue-tracker.md / triage-labels.md / domain.md
 │   └── diagram/         README 嵌入的 draw.io 圖;`.drawio.svg` 同時是圖與可編輯原始檔(單一事實來源,
 │       │                純 SVG 文字、無 foreignObject,GitHub 可直接顯示;以 Docker 內的 drawio 匯出,host 不裝 draw.io)
