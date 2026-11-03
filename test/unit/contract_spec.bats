@@ -246,3 +246,11 @@ _checks_per_promise() {
         [[ "${section}" == *"── ${name} "* ]]
     done < <(find "${REPO_ROOT}/test/unit/fixture" -type f | sort)
 }
+
+@test "#724: evidence tree description distinguishes existing contents from new review policy" {
+    run grep -F '── evidence/' "${REPO_ROOT}/doc/structure.md"
+    assert_success
+    assert_output --partial '驗收檢查程式、fixture 與證據'
+    assert_output --partial '既有 review 紀錄'
+    assert_output --partial '新增審查紀錄改放 PR 留言或 .agents/state/'
+}
