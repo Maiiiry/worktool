@@ -492,6 +492,36 @@ EOF
     assert_equal "$(_stub_calls)" ""
 }
 
+@test "#720: just box lists the bench max-wait option" {
+    _just --list box
+    assert_success
+    assert_line --regexp '^ +bench .*--max-wait N'
+}
+
+@test "#720: just verify lists the setup real-box opt-in" {
+    _just --list verify
+    assert_success
+    assert_line --regexp '^ +setup .*args: ITEM, --list, --allow-real-box, --help'
+}
+
+@test "#720: just verify lists the diagram list and realbox options" {
+    _just --list verify
+    assert_success
+    assert_line --regexp '^ +diagram .*args: ITEM, --root <repo>, --list, --realbox, --help'
+}
+
+@test "#720: just verify lists the realbox list option" {
+    _just --list verify
+    assert_success
+    assert_line --regexp '^ +realbox .*args: ITEM, --list, --allow-real-box'
+}
+
+@test "#720: just verify lists the evidence realbox opt-in" {
+    _just --list verify
+    assert_success
+    assert_line --regexp '^ +evidence .*args: ITEM, --list, --allow-realbox, --help'
+}
+
 @test "#513: bare just verify lists the realbox comment tag option" {
     _just verify
     assert_success
