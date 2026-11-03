@@ -259,11 +259,11 @@ _fake_just() {
                 return $?
             fi
             if [[ "${_verb}" == setup ]]; then
-                _out="${FAKE_JUST_SETUP_OUT-[INFO] auto-enter: yes (default)}"
+                _out="${FAKE_JUST_SETUP_OUT-[INFO] auto-enter: yes (user)}"
                 [[ -n "${_out}" ]] && printf '%s\n' "${_out}"
                 return "${FAKE_JUST_SETUP_RC:-0}"
             fi
-            _out="${FAKE_JUST_STATUS_OUT-auto-enter: yes (default)}"
+            _out="${FAKE_JUST_STATUS_OUT-auto-enter: yes (user)}"
             [[ -n "${_out}" ]] && printf '%s\n' "${_out}"
             return "${FAKE_JUST_STATUS_RC:-0}"
             ;;

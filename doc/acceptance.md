@@ -1078,7 +1078,7 @@ rc=0
       [WARN] manual check: inspect <本輪 window.* 目錄>/before and process cwd/ancestry; confirm the owned window is closed, save evidence, then remove <本輪 window.* 目錄> and retry 5.2.3
       ```
       5.2.3 即使已成功還原設定與確認還原視窗，只要備份內仍有保留的 `window.*` 所有權目錄，就不刪除備份並回非零；須先人工確認該視窗已關閉、保存所需證據並移除對應目錄，才能重跑 5.2.3 完成清理。本輪結束最後印「請維護者自行判斷開窗是否順暢（主觀項目，不影響 rc）。」
-      正常路徑不啟動 tmux，但 `box/dev.ini` 的第一個 init_hook 仍建立 `${TMUX_TMPDIR}`（本輪 `box-home/.cache/tmux`），因此成功初始化後實機清理前為 `box-state before-cleanup: home=1 tmux=1`；欄位表示 HOME 與 `.cache/tmux` 是否存在，不表示目前有無 tmux session。純 stub 不建立盒 HOME，故清理前為 home=0 tmux=0。以下以乾淨基準與真實 enter.sh／外部工具 stub 示範完整 stdout（Docker start stub 模擬 init hook 建立 HOME 與 tmux 目錄）；實機的既有檔案類型、checksum、路徑、PID、namespace 與狀態值依環境而異，還原 host shell 可為 sh 等支援的 shell（stub 固定 fish）。
+      正常路徑不啟動 tmux，但 `box/dev.ini` 的第一個 init_hook 仍建立 `${TMUX_TMPDIR}`（本輪 `box-home/.cache/tmux`），因此成功初始化後實機清理前為 `box-state before-cleanup: home=1 tmux=1`；欄位表示 HOME 與 `.cache/tmux` 是否存在，不表示目前有無 tmux session。純 stub 不建立盒 HOME，故清理前為 home=0 tmux=0。以下以乾淨基準、真實 enter.sh／setup.sh／status.sh 與外部工具 stub 示範完整 stdout（Docker start stub 模擬 init hook 建立 HOME 與 tmux 目錄）；實機的既有檔案類型、checksum、路徑、PID、namespace 與狀態值依環境而異，還原 host shell 可為 sh 等支援的 shell（stub 固定 fish）。
       ````text stdout
       backup-covers=5/5
       host-state baseline: present=0
@@ -1091,8 +1091,16 @@ rc=0
       backup=<path> ok=1
       revalidate=1
       preexisting-dev=0
-      [INFO] auto-enter: yes (default)
-      auto-enter: yes (default)
+      config: <path>
+      auto-enter: yes (user)
+      terminal: ghostty (user)
+      box: dev (user)
+      ghostty: <path> (managed block: present)
+      distrobox.conf: <path> (managed block: present)
+      wrapper: <path> (recorded in a managed block: runnable)
+      distrobox: <path> (recorded in a managed block: runnable)
+      link: box HOME not recorded - user config not linked yet (run: just box assemble)
+      home: not recorded (run: just box assemble)
       setup-rc=0
       user-content after-apply: ghostty=intact config.ghostty=intact distrobox.conf=intact
       ghostty-reload=1
@@ -1117,15 +1125,16 @@ rc=0
       cleanup-rc=0
       請維護者自行判斷開窗是否順暢（主觀項目，不影響 rc）。
       ````
-      首次啟動 stderr（正常 Docker 新盒；進度可出現多行，依安裝耗時與階段而異）：
+      首次啟動與 setup 的 stderr（setup 診斷僅節錄 auto-enter；另有 terminal、box、設定路徑、寫入與重新載入提示；正常 Docker 新盒的初始化進度可出現多行，依安裝耗時與階段而異）：
       ````text stderr
       phase=first-start
       [INFO] first launch of box 'dev': distrobox installs its packages first - this can take several minutes (timeout 15m00s)
       [INFO] follow the full output in another terminal: docker logs -f dev
       [INFO] full init log: <path>
       [INFO] first launch: initialisation complete after <elapsed> - entering the box
+      [INFO] auto-enter: yes (user)
       ````
-      實機每 10 秒可能另印 `[INFO] first launch: <stage> - <elapsed> elapsed - <latest>`；setup 使用真實設定時也會印 5.1 已列出的設定診斷。純 just stub 不執行 enter.sh，stderr 僅有 phase 行；雙向比對 spec 使用真實 enter.sh 與立即完成的 Docker stub，核對上述四行初始化訊息。stdout 的 just setup stub 將 INFO 行印到 stdout，實機真實 setup 的診斷走 stderr。以下保留純 stub 的視窗與還原輸出，供視窗 spec 比對：
+      此例的 assemble stub 未記錄 HOME／link，因此 status 如上；實機會依 assemble 保存的 HOME／link 印出對應路徑與狀態。實機每 10 秒可能另印 `[INFO] first launch: <stage> - <elapsed> elapsed - <latest>`。純 just stub 不執行 enter.sh，stderr 僅有 phase 行；雙向比對 spec 使用真實 enter.sh、setup.sh、status.sh 與立即完成的 Docker stub，核對完整 stdout 與節錄的 stderr；setup 的診斷走 stderr。以下保留純 stub 的視窗與還原輸出，供視窗 spec 比對：
       stubbed 非 tty 完整執行的視窗與還原輸出如下（其餘備份明細如上；PID 與 namespace 由 fixture 固定）：
       ```text
       ghostty-reload=1
