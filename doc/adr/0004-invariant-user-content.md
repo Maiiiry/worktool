@@ -54,12 +54,14 @@ worktool 的核心承諾是重建（#200 定案 2、3）：換機、重灌、升
   - worktool 自己的狀態檔（`~/.config/worktool/config`）使用者也可以編輯：`test/unit/setup_spec.bats`:「a stored user choice persists across runs; a default key is recomputed」（使用者選的值不被預設蓋掉）、`test/unit/setup_spec.bats`:「#198: setup keeps the box home lines assemble recorded in the state file」（setup 改寫狀態檔時保留 assemble 記下的 `home`／`home.source` 那一對；其他使用者的行不保留，見下方待補）、`test/integration/setup_spec.bats`:「a state file setup wrote and a user then corrupted is refused by both scripts, and setup leaves it as is」（使用者改壞的狀態檔被拒絕、原樣留下，不被「修正」）。
   - `just box assemble` 寫同一個狀態檔：`test/integration/assemble_spec.bats`:「#198: a successful run records home= and home.source= in the state file, keeping the other lines」（註解行與 `auto-enter` 等使用者的行原樣留下、順序不變，只換掉 `home` 那一對）、`test/integration/assemble_spec.bats`:「#198: a failed distrobox run records nothing」（失敗不寫）、`test/unit/assemble_spec.bats`:「#198: dry-run records nothing in the state file」（試跑不寫）、`test/unit/assemble_spec.bats`:「#198: a stored user home is used when --home is not given; --home still wins」（使用者存的 home 不被預設蓋掉）。
 
+user config 已由 #199／PR #228 交付：`just box assemble` 以 symlink 從 host HOME 帶進盒子 HOME，不複製、不修改 host 那份；同名既有項目不覆蓋。由 `test/integration/assemble_spec.bats`:「#199: an existing entry in the box HOME survives assemble with a warning」與 `test/unit/link_spec.bats`:「a foreign symlink in the box HOME (even a dangling one) is left as is」守住。
+
 這些測試只證明 `setup.sh` 對 ghostty config、distrobox.conf、狀態檔，以及 `assemble.sh` 對狀態檔的行為，不能推到其他指令或檔案。以下尚無機制或測試，標為待補：
 
-- 要改先問：待補。目前沒有詢問流程；受管區塊以外會被改動的只有狀態檔的狀態鍵（依上面的例外不需詢問），以及下面兩條待補的情形。之後任何功能需要改既有內容時，要先有詢問機制與測試。
+- 要改先問：待補。目前沒有詢問流程；受管區塊以外會被改動的只有狀態檔的狀態鍵（依上面的例外不需詢問），以及下面待補的情形。之後任何功能需要改既有內容時，要先有詢問機制與測試。
 - 狀態檔裡使用者自己加的行：待補。`home_record` 只換掉 `home`／`home.source`，其他行原樣留下（見上面 assemble 的案例）；但 `setup.sh` 的 `_config_render` 依已決定的值重寫整個狀態檔，只帶回 `home` 那一對，使用者自己加的註解或鍵會被刪掉。目前沒有測試守住，違反第 3、4 條。
 - 使用者寫在受管區塊標記之間的行：待補。標記行寫著 do not edit，改寫時區塊內的內容整段換掉；使用者若違反標記在區塊內寫東西，會被覆蓋，目前沒有偵測也沒有測試。
 - profile 或狀態檔是 symlink 時：待補。`setup.sh` 的 `_write_atomic` 與 `home_record` 都先寫暫存檔再改名取代目標；依程式碼，目標若是 symlink，改寫後 symlink 本身會被換成一般檔，連結目標不變但連結消失。目前沒有測試。
-- user config（`~/.ssh`、`~/.gitconfig` 等）帶進盒子 HOME 時不覆蓋同名檔：待補，由 #199 實作（見 `doc/adr/0002-box-owns-its-home.md` 決策 3）。
+
 - 盒子 HOME 目錄（`just box assemble --home`）裡使用者已有的檔案不被刪除或覆蓋：待補，目前沒有測試。
 - 全 repo 層級的守門（例如禁止腳本刪除 HOME 底下非 worktool 建立的檔案）：待補。

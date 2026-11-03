@@ -21,8 +21,8 @@
 
 ## 3. worktool 不做的事
 
-- **不管 user config。** `~/.ssh`、金鑰、token 等 worktool 不寫、不進 repo。依 ADR 0002 決策 3，user config 之後會以 symlink 從 host HOME 帶進盒子 HOME（不複製、不修改，host 那份是唯一一份），尚未實作，將由 #199 實作。
-  - 驗證：待驗（#199 落地時補測試）。
+- **不管 user config。** `~/.ssh`、金鑰、token 等 worktool 不寫、不進 repo。依 ADR 0002 決策 3，user config 已以 symlink 從 host HOME 帶進盒子 HOME（不複製、不修改，host 那份是唯一一份），已由 #199／PR #228 交付。
+  - 驗證：`test/integration/assemble_spec.bats`（#199 案例：成功建立後連結到盒子 HOME、同名既有項目保留並警告、失敗與試跑不建立連結）；`test/unit/link_spec.bats`（絕對 symlink、既有檔案與外來 symlink 不覆蓋）。
 - **不在 host 用 apt 裝 CLI／TUI 工具。** CLI／TUI 工具一律裝在盒內，盒子清單只有 `box/dev.ini` 一份。
   - 驗證：待驗（尚無檢查「沒有任何腳本在 host 呼叫 apt」的測試）。盒內安裝的部分由 `test/system/real_assemble_spec.bats` 檢查：真實 distrobox 送到容器管理器的建立容器的請求帶有清單裡的套件。
 - **不寫 host shell 設定。** host 與盒子互不干擾：用非 ghostty 開的終端拿到的是 worktool 沒碰過的 host shell。`just box setup` 只寫 worktool 自己的狀態檔與終端設定裡標記的受管區塊（見 [`enter.md`](enter.md)）。盒子使用獨立 HOME 是這條的機制（#196、[ADR 0002](adr/0002-box-owns-its-home.md)）；ADR 0002 也寫明 `--home` 不是隔離，盒內仍能以絕對路徑讀寫 host HOME。

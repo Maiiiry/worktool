@@ -299,3 +299,16 @@ _check_evidence_tree() {
         rm "${copy}/doc/evidence/${path}"
     done
 }
+
+@test "#728: user config symlinks are delivered and cite preservation checks" {
+    run _section 3
+    assert_success
+    assert_output --partial "以 symlink 從 host HOME 帶進盒子 HOME"
+    assert_output --partial "test/integration/assemble_spec.bats"
+    refute_output --partial "尚未實作"
+    refute_output --partial "#199 落地時"
+    run cat "${REPO_ROOT}/doc/adr/0004-invariant-user-content.md"
+    assert_success
+    assert_output --partial "test/unit/link_spec.bats"
+    refute_output --partial "待補，由 #199 實作"
+}
