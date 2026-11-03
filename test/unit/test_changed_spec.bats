@@ -230,6 +230,23 @@ _dispatched() {
         --ci-lint '--ci-unit test/unit/log_spec.bats')"
 }
 
+@test "test.sh --changed maps a changed verify script to its spec" {
+    mkdir -p "${TEMP_REPO}/script/verify"
+    printf '# verify gate script\n' >"${TEMP_REPO}/script/verify/gate.sh"
+    printf '@test "verify gate" { true; }\n' \
+        >"${TEMP_REPO}/test/unit/verify_gate_spec.bats"
+    _commit_baseline
+    printf '\n# changed\n' >>"${TEMP_REPO}/script/verify/gate.sh"
+
+    run bash -c 'cd "$1" && ./script/test/test.sh --changed --base main' \
+        _ "${TEMP_REPO}"
+
+    assert_success
+    assert_equal "$(_dispatched)" "$(printf '%s\n' \
+        --ci-lint '--ci-unit test/unit/verify_gate_spec.bats')"
+    refute_output --partial "沒有對應 spec"
+}
+
 @test "test.sh --changed maps a source file to specs across tiers" {
     mkdir -p "${TEMP_REPO}/script/box" "${TEMP_REPO}/test/integration"
     printf '# setup script\n' >"${TEMP_REPO}/script/box/setup.sh"
@@ -276,6 +293,25 @@ _dispatched() {
                 missing=1
             fi
         done < <(_changed_path_map)
+        exit "$missing"
+    ' _ "${REPO_ROOT}"
+
+    assert_success
+}
+
+@test "changed path map covers every tracked verify file and library" {
+    run bash -c '
+        source "$1/script/test/test.sh"
+        paths=$(git -c "safe.directory=$1" -C "$1" ls-files "script/verify/*" "lib/*.sh") \
+            || exit 1
+        [[ -n "$paths" ]] || exit 1
+        missing=0
+        while IFS= read -r path; do
+            if [[ -z "$(_mapped_specs "$path")" ]]; then
+                printf "missing changed path mapping: %s\n" "$path"
+                missing=1
+            fi
+        done <<<"$paths"
         exit "$missing"
     ' _ "${REPO_ROOT}"
 
