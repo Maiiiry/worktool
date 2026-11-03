@@ -1602,6 +1602,8 @@ _mode_paths() {
         "${GHOSTTY_USER_LINES[@]}" || return 1
     _check_user_content 3.11 "${_phase}" distrobox.conf "${ITEM_H}/.config/distrobox/distrobox.conf" \
         '# acceptance isolation' || return 1
+    _check_user_content 3.11 "${_phase}" tmux.conf "${ITEM_H}/.tmux.conf" \
+        "${TMUX_USER_LINES[@]}" || return 1
     grep -qxF '# acceptance state' "${ITEM_H}/.config/worktool/config"
 }
 

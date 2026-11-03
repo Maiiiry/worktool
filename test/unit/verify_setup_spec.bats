@@ -1399,3 +1399,10 @@ _degrade_setup_line() {
     assert_failure 1
     assert_line 'user-content after-write: ghostty=intact tmux.conf=LOST'
 }
+
+@test "#713 3.11: host tmux content is checked after managed file changes" {
+    _stub_just_setup_writing trailing-blank
+    run "${VERIFY}" 3.11
+    assert_failure 1
+    assert_output --partial "tmux.conf lost the user's own content"
+}
