@@ -170,6 +170,27 @@ EOF
     refute_output --partial 'five-usages'
 }
 
+@test "false-pass guard: just box help printing script usages out of order fails" {
+    {
+        cat <<'EOF'
+if [ "${1:-}" = box ] && [ "${2:-}" = help ]; then
+    printf 'Usage: bench.sh\nUsage: assemble.sh\nUsage: setup.sh\nUsage: status.sh\nUsage: enter.sh\n'
+    exit 0
+fi
+if [ "${1:-}" = box ]; then
+EOF
+        _recipe_lines_body
+        cat <<'EOF'
+    exit 0
+fi
+exit 1
+EOF
+    } | _stub just
+    PATH="${FAKE_BIN}:${PATH}" run "${UI_SH}" 1.1
+    assert_failure 1
+    refute_output --partial 'five-usages'
+}
+
 @test "false-pass guard: just box printing the documented recipe list but exiting 1 fails" {
     _stub_just_documented 1
     PATH="${FAKE_BIN}:${PATH}" run "${UI_SH}" 1.1

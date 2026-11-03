@@ -325,10 +325,10 @@ _check_recipe_list() {
 }
 
 # Check the original `Usage: <script>.sh` names of `just box help` ($1):
-# exactly the five box scripts, once each.
+# exactly the five box scripts, once each, in documented order.
 _check_usage_names() {
     local _names="$1"
-    local _name _count=0
+    local _name _count=0 _index=0
     local -A _seen=()
     while IFS= read -r _name; do
         [[ -n "${_name}" ]] || continue
@@ -337,6 +337,11 @@ _check_usage_names() {
             return 1
         fi
         _seen["${_name#Usage: }"]=1
+        if [[ "${_name#Usage: }" != "${USAGES_EXPECTED[${_index}]:-}" ]]; then
+            _err "\`just box help\` prints usages out of order (expected ${USAGES_EXPECTED[*]})"
+            return 1
+        fi
+        _index=$((_index + 1))
     done <<<"${_names}"
 
     local _missing=()
