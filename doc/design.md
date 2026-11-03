@@ -71,8 +71,8 @@ install script 形式)與容器框架。盒子有自己的 HOME(見 `doc/adr/000
 4. 效能目標:進盒 prompt 感知延遲 < 約 300ms;工具呼叫額外負擔 < 約 50-100ms。
    300 ms 這條線由系統層 real-engine gate **強制**(`just test system-real`,
    issue #23):`test/system/real_engine_spec.bats` 對 DinD 內建出的真實 dev 盒跑
-   `just box bench --max-ms 300`(底層 `script/box/bench.sh --box dev --runs 5
-   --warmup 2 --max-ms 300`),shell 中位數(由 setup 寫出的受管 command 經
+   `script/box/bench.sh --box dev --runs 5 --warmup 2 --shell 'fish -c exit'
+   --max-ms 300`,shell 中位數(由 setup 寫出的受管 command 經
    enter.sh wrapper、distrobox enter + shell 啟動,即使用者拿到提示字元的感知延遲)超過即 exit 1、gate 紅;門檻只寫在該 spec 的 `ENTER_MAX_MS`
    一處,另有 `--max-ms 1` 的負向案例證明 gate 會咬。量測前先等主機安靜(CPU
    pressure `some avg10 <= 2.00` 連續 5 秒),等不到或量測途中超標即 exit 3

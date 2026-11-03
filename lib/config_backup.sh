@@ -403,7 +403,7 @@ _cfgbk_backup_missing_parents() {
     done
     [[ "${_missing}" -eq 1 ]] || return 0
     # Removing the new chain changes its first existing ancestor's mtime.
-    [[ -d "${_p}" ]] || { guard_fail "init-log ancestor is not a directory: ${_p}"; return 1; }
+    [[ -d "${_p}" ]] || { guard_fail "config ancestor is not a directory: ${_p}"; return 1; }
     _mtime="$(stat -L -c %y -- "${_p}")" || return 1
     printf '%s\0%s\0' "${_p}" "${_mtime}" >>"${CFGBK_B}/directories"
 }
