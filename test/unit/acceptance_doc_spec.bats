@@ -470,3 +470,18 @@ _compare_52_doc() {
     run _compare_52_doc "${doc}" "${DOC_52_OUTPUT}"$'\nphase=first-start' "${DOC_52_STDERR}"
     assert_failure
 }
+
+@test "#724: structure documents exactly the runner unit CPU skip exemptions" {
+    local policy section reason expected documented
+    policy="$(sed -n '/^_has_unexpected_skip() {/,/^}/p' "${REPO_ROOT}/script/test/test.sh")"
+    reason="$(sed -n 's/.*reason = " \(.*\)"/\1/p' <<<"${policy}")"
+    expected="$(sed -n "s/.*\$0 == \"\([^\"]*\)\" reason.*/\1/p" <<<"${policy}" |
+        while IFS= read -r name; do printf '%s | %s\n' "${name}" "${reason}"; done | sort)"
+    [[ -n "${expected}" ]]
+    section="$(sed -n '/^## 測試/,/^## CI/p' "${REPO_ROOT}/doc/structure.md")"
+    documented="$(sed -n "s/^| \`\\([^\`]*\\)\` | \`\\([^\`]*\\)\` |\$/\\1 | \\2/p" <<<"${section}" | sort)"
+    assert_equal "${documented}" "${expected}"
+    [[ "${section}" == *"未設 \`WORKTOOL_STRESS=1\`（未設定或值不是 \`1\`）時，unit 層只允許以下三個 CPU 負載重現案例"* ]]
+    [[ "${section}" == *'除此之外，每層都不得有任何 skip'* ]]
+    [[ "${section}" == *"設 \`WORKTOOL_STRESS=1\` 時，這三個案例也不得 skip"* ]]
+}

@@ -226,3 +226,76 @@ _checks_per_promise() {
     assert_success
     assert_line "unit/$(basename -- "${BATS_TEST_FILENAME}")"
 }
+
+@test "#724: structure directory tree includes the M3 helpers, evidence and unit fixtures" {
+    local tree section name path
+    tree="$(sed -n '/^## 目錄結構/,/^```$/p' "${REPO_ROOT}/doc/structure.md")"
+    section="$(sed -n '/^├── lib\//,/^├── box\//p' <<<"${tree}")"
+    for name in config_backup.sh distrobox_manager.sh guard.sh verify_run.sh realbox_interrupt.sh; do
+        [[ "${section}" == *"── ${name} "* ]]
+    done
+    section="$(sed -n '/^│   └── helper\//,/^├── dockerfile\//p' <<<"${tree}")"
+    for name in diagnostics.bash interrupt_load.bash realbox_window.bash; do
+        [[ "${section}" == *"── ${name} "* ]]
+    done
+    section="$(sed -n '/^├── doc\//,/^├── .agents\//p' <<<"${tree}")"
+    [[ "${section}" == *'── evidence/ '* ]]
+    section="$(sed -n '/^│   │   └── fixture\//,/^│   ├── matrix\//p' <<<"${tree}")"
+    while IFS= read -r path; do
+        name="${path##*/}"
+        [[ "${section}" == *"── ${name} "* ]]
+    done < <(find "${REPO_ROOT}/test/unit/fixture" -type f | sort)
+}
+
+@test "#724: structure describes guard as fail-closed status primitives" {
+    run grep -F '── guard.sh ' "${REPO_ROOT}/doc/structure.md"
+    assert_success
+    assert_output --partial '失敗封閉的狀態原語'
+    assert_output --partial '區分不存在與無法判定'
+    refute_output --partial '驗收前置檢查與拒絕條件'
+}
+
+_check_evidence_tree() {
+    local root="$1" files
+    files=$(cd "${root}/doc/evidence" && find . -type f | sed 's|^./||' | sort)
+    jq -ner --arg files "$files" --rawfile structure "${root}/doc/structure.md" '
+        ($structure | split("\n") | map(select(contains("── evidence/"))) | .[0]) as $description |
+        ($structure | split("── evidence/")[1] | split("\n│   ├── ")[0] |
+            split("\n")[1:] | map(capture("^(?<indent>(?:│   |    )*)[├└]── (?<name>[^ ]+)"))) as $entries |
+        (reduce $entries[] as $entry ({dirs: [], files: []};
+            (($entry.indent | length) / 4 - 2) as $depth |
+            .dirs = .dirs[:$depth] |
+            if ($entry.name | endswith("/")) then .dirs += [$entry.name | rtrimstr("/")]
+            else .files += [(.dirs + [$entry.name]) | join("/")] end) | .files | sort) as $documented |
+        if $documented == ($files | split("\n") | sort) then $description
+        else error("evidence tree: documented files differ from directory contents") end'
+}
+
+@test "#724: evidence tree description distinguishes existing contents from new review policy" {
+    run _check_evidence_tree "${REPO_ROOT}"
+    assert_success
+    assert_output --partial '驗收檢查程式、fixture 與證據'
+    assert_output --partial '既有 review 紀錄'
+    assert_output --partial '新增審查紀錄改放 PR 留言或 .agents/state/'
+}
+
+@test "#724: evidence tree check rejects removed or undocumented contents" {
+    local copy="${BATS_TEST_TMPDIR}/copy" path
+    mkdir -p "${copy}/doc"
+    cp "${REPO_ROOT}/doc/structure.md" "${copy}/doc/"
+    cp -R "${REPO_ROOT}/doc/evidence" "${copy}/doc/"
+    run _check_evidence_tree "${copy}"
+    assert_success
+    while IFS= read -r path; do
+        rm "${copy}/doc/evidence/${path}"
+        run _check_evidence_tree "${copy}"
+        assert_failure
+        cp "${REPO_ROOT}/doc/evidence/${path}" "${copy}/doc/evidence/${path}"
+    done < <(cd "${REPO_ROOT}/doc/evidence" && find . -type f | sed 's|^./||' | sort)
+    for path in unexpected.txt negative/unexpected.json; do
+        touch "${copy}/doc/evidence/${path}"
+        run _check_evidence_tree "${copy}"
+        assert_failure
+        rm "${copy}/doc/evidence/${path}"
+    done
+}

@@ -945,3 +945,52 @@ EOF
     assert_success
     assert_equal "$(_listed_names)" "codex default "
 }
+
+# Compare the documented namespace contract with just's parsed module interface.
+_structure_namespace_gaps() {
+    local root="$1" dump
+    if ! dump=$(just --justfile "${root}/justfile" --dump --dump-format json); then
+        printf 'namespace rules: just --dump failed\n' >&2
+        return 1
+    fi
+    jq -er --arg root "$root" \
+        --rawfile structure "${root}/doc/structure.md" \
+        --rawfile design "${root}/doc/design.md" \
+        -f "${REPO_ROOT}/test/helper/namespace_rules.jq" <<<"$dump"
+}
+
+@test "#724: structure namespace rules match module defaults, help and working directories" {
+    run _structure_namespace_gaps "${REPO_ROOT}"
+    assert_success
+}
+
+_copy_namespace_docs() {
+    mkdir -p "${COPY}/doc"
+    cp "${REPO_ROOT}/doc/structure.md" "${REPO_ROOT}/doc/design.md" "${COPY}/doc/"
+}
+
+@test "#724: namespace check rejects module and design drift" {
+    local mutation
+    for mutation in alias cwd namespace default design; do
+        _make_repo_copy
+        _copy_namespace_docs
+        case "$mutation" in
+            alias) printf '\nalias h := help\n' >>"${COPY}/.agents/script/justfile.job" ;;
+            cwd) sed -i "s|working-directory := .*|working-directory := '../..'|" "${COPY}/.agents/script/worktree/justfile.worktree" ;;
+            namespace)
+                printf "\nmod? extra 'script/agent/justfile.agent'\n" >>"${COPY}/justfile"
+                ;;
+            default)
+                sed -i 's|@just --justfile.*--list|@echo changed|' "${COPY}/script/agent/justfile.agent"
+                ;;
+            design) sed -i "s/\`job\` 有 \`help\`/\`job\` 有 \`help\`(alias \`h\`)/" "${COPY}/doc/design.md" ;;
+        esac
+        run _structure_namespace_gaps "${COPY}"
+        assert_failure
+        if [[ "$mutation" == design ]]; then
+            assert_output --partial 'namespace rules: modules differ from design rule 5'
+        else
+            assert_output --partial 'namespace rules: structure table differs from modules'
+        fi
+    done
+}
