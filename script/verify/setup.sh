@@ -1351,6 +1351,8 @@ but status reported
 # The second managed file now belongs to distrobox, never host tmux.
 _item_3_7() {
     _require_tools env just sed grep mktemp sh || return $?
+    NORM_D="$(_resolve_exec distrobox 'setup writes its absolute path into the managed command')" || return $?
+    NORM_G="$(_resolve_exec ghostty 'setup resolves the terminal executable')" || return $?
     _item_begin || return 1
     _seed_user_content 3.7 || return 1
     local _conf="${ITEM_H}/.config/distrobox/distrobox.conf" _blocks _bad=0

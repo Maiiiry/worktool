@@ -1330,3 +1330,9 @@ _degrade_setup_line() {
     refute_output --partial '3.13 PASS'
     _setup_acceptance_others "${_repo}" 3.13
 }
+
+@test "#713 3.7: missing distrobox is unavailable through just" {
+    run env PATH="${NO_DISTROBOX_PATH}" "${REAL_JUST}" --justfile "${REPO_ROOT}/justfile" verify setup 3.7
+    assert_failure 3
+    assert_line '[UNAVAILABLE] setup.sh: distrobox not found on PATH'
+}
