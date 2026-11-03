@@ -467,14 +467,14 @@ _compare_52_doc() {
 @test "#714: acceptance 2.3 limits exact case counts to selected ok lines" {
     local section
     section="$(sed -n '/^  - \[ \] 2\.3 /,/^  - \[ \] 2\.4 /p' "${REPO_ROOT}/doc/acceptance.md")"
-    [[ "${section}" == *'只適用於 pattern 選中的 `ok` 行（含 ghostty）'* ]]
-    [[ "${section}" == *'其餘案例的失敗由 `^not ok` 與 tier rc 擋住'* ]]
+    [[ "${section}" == *"只適用於 pattern 選中的 \`ok\` 行（含 ghostty）"* ]]
+    [[ "${section}" == *"其餘案例的失敗由 \`^not ok\` 與 tier rc 擋住"* ]]
 }
 
 @test "#714: acceptance 2.3 assigns namespace equality to bats and format checks to gate" {
     local section
     section="$(sed -n '/^  - \[ \] 2\.3 /,/^  - \[ \] 2\.4 /p' "${REPO_ROOT}/doc/acceptance.md")"
     [[ "${section}" == *'mntns 相等由 bats 案例保證'* ]]
-    [[ "${section}" == *'`gate.sh` 只檢查 `mntns=mnt:[數字]` 格式與字面 `== dev container`'* ]]
-    [[ "${section}" != *'`mntns=` 必須是盒子的 mount namespace'* ]]
+    [[ "${section}" == *"\`gate.sh\` 只檢查 \`mntns=mnt:[數字]\` 格式與字面 \`== dev container\`"* ]]
+    [[ "${section}" != *"\`mntns=\` 必須是盒子的 mount namespace"* ]]
 }
