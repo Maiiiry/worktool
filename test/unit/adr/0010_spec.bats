@@ -76,7 +76,7 @@ _adr_0010_check_guards() {
 @test "#728: ADR 0010 describes all four asserted CI invocations" {
     run _adr_0010_section 目前由哪些機制或測試守住
     assert_success
-    assert_output --partial 'just test ${{ matrix.tier }}'
+    assert_output --partial "just test \${{ matrix.tier }}"
     assert_output --partial "just test system-real"
     assert_output --partial "just test verify-env"
     assert_output --partial "worktool-verify:local -c 'just verify all'"
