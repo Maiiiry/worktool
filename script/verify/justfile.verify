@@ -58,7 +58,7 @@ gate *args:
 setup *args:
     ./script/verify/setup.sh "$@"
 
-# Acceptance item 4.1: the three README draw.io diagrams (args: ITEM, --root <repo>, --help).
+# Acceptance item 4.1: the three README draw.io diagrams (args: ITEM, --root <repo>, --list, --realbox, --help).
 diagram *args:
     ./script/verify/diagram.sh "$@"
 
