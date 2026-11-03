@@ -77,7 +77,7 @@
 #   put on PATH) and then break exactly one thing, so each case pins one
 #   guard instead of breaking the run wholesale.
 #
-#   The first case is the control: with everything behaving, all six items
+#   The first case is the control: with everything behaving, all thirteen items
 #   pass. Without it the failure cases below would also be satisfied by a
 #   script that can never pass at all.
 
@@ -104,8 +104,8 @@ setup() {
     REAL_MKTEMP="$(command -v mktemp)"
     REAL_JUST="$(command -v just)"
 
-    # No test image ships ghostty; setup.sh only ever runs `command -v` on
-    # it, so an executable that does nothing is a faithful stand-in.
+    # No test image ships ghostty; a no-output stand-in resolves on PATH
+    # and makes the optional +version probe yield no recognized version.
     _stub ghostty '#!/bin/sh' 'exit 0'
 
     # A PATH that holds just and ghostty but NOT distrobox (which the image

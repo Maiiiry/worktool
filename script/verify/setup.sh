@@ -10,6 +10,7 @@
 # Items 3.1-3.6 cover dry-run, direct entry, disable, refusal, explicit
 # distrobox and the status states. 3.7 checks distrobox.conf isolation;
 # 3.8 checks terminal none; 3.9 checks config.ghostty migration.
+# 3.10-3.13 check atomic failure, modes, dry-run removal and idempotence.
 #
 # Every item runs against a THROWAWAY HOME under its own mktemp directory,
 # so the maintainer's real configuration is never read or written, and the
@@ -853,8 +854,8 @@ _item_3_2() {
     fi
 
     _run_norm "${_env[@]}" just box status || return 1
-    # The document publishes the whole eight-line report, including the last
-    # line's verdict on whether the recorded distrobox still runs.
+    # Pin the documented status fields, including whether the recorded
+    # distrobox still runs; status also reports its recorded wrapper.
     _expect_lines 3.2 \
         'config: <H>/.config/worktool/config' \
         'auto-enter: yes (default)' \
@@ -916,7 +917,7 @@ _item_3_2() {
 # --- 3.3 ---------------------------------------------------------------------
 # Back to the host shell: setup first (its output is the 3.2 one and is not
 # repeated), then --auto-enter no, which removes the block and reports each
-# removal. Afterwards zero managed blocks are left.
+# removal. Afterwards no Ghostty block remains; distrobox isolation stays.
 _item_3_3() {
     _require_tools env just sed grep mktemp || return $?
     _item_begin || return 1
@@ -950,9 +951,7 @@ _item_3_3() {
 
     _run_norm "${_env[@]}" just box setup --auto-enter no || return 1
     _remove_rc="${LAST_RC}"
-    # Every removal is reported by name, and the removed block is named with
-    # the command it held; the tmux.conf line is the "there was nothing to
-    # undo" half of the same report.
+    # Report the Ghostty removal and its previous command; host tmux is untouched.
     _expect_lines 3.3 \
         '[INFO] auto-enter: no (user)' \
         '[INFO] terminal: ghostty (default)' \

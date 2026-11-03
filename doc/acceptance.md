@@ -718,7 +718,7 @@ rc=0
 
 - [ ] 3. 進盒設定:user 可選、預設直接進盒、每個決策印 log(`script/verify/setup.sh` 每項自建拋棄式 HOME 並在 EXIT / INT / TERM / HUP 清掉,不動你的家目錄)
 
-  受管檔案是**使用者的**,`just box setup` 只是在裡面租一個區塊。所以**每一個**會寫入或移除受管區塊的項目 —— 3.1 / 3.2 / 3.3 / 3.5 / 3.6 / 3.7 / 3.8 / 3.9 —— 都在跑 setup **之前**就先把臨時 HOME 的 ghostty 設定與 `~/.tmux.conf` 種進三行看得出來的使用者內容,並在每一次寫入、改寫、移除之後再查一次:受管區塊以外的內容必須還是那三行、順序不變、一行不多一行不少。這是 `user-content <時機>: ghostty=intact tmux.conf=intact` 那幾行。少了這個斷言,一個「把整份設定覆寫成受管區塊」的 setup 會讓區塊在、`status` 說 `present`、檔案數與結束碼全對 —— 而使用者的 ghostty 設定已經被刪掉了。3.4 不在名單裡,因為它只驗「被拒絕的輸入」與壞掉的狀態檔,整項從頭到尾不寫也不移除任何受管區塊(它反而要求 HOME 底下一個檔案都沒被建立)。
+  受管檔案是**使用者的**,`just box setup` 只是在裡面租一個區塊。所以**每一個**會寫入或移除受管區塊的項目 —— 3.1 / 3.2 / 3.3 / 3.5 / 3.6 / 3.7 / 3.8 / 3.9 / 3.10 / 3.11 / 3.12 / 3.13 —— 都在跑 setup **之前**就先把臨時 HOME 的 ghostty 設定與 `~/.tmux.conf` 種進三行看得出來的使用者內容,並在每一次寫入、改寫、移除之後再查一次:受管區塊以外的內容必須還是那三行、順序不變、一行不多一行不少，連檔尾空白行與最後換行也必須相同。這是 `user-content <時機>: ghostty=intact tmux.conf=intact` 那幾行。少了這個斷言,一個「把整份設定覆寫成受管區塊」的 setup 會讓區塊在、`status` 說 `present`、檔案數與結束碼全對 —— 而使用者的 ghostty 設定已經被刪掉了。3.4 不在名單裡,因為它只驗「被拒絕的輸入」與壞掉的狀態檔,整項從頭到尾不寫也不移除任何受管區塊(它反而要求 HOME 底下一個檔案都沒被建立)。
 
   PR #232 後不再有 tmux 決策，也不碰 host 的 `~/.tmux.conf`；`tmux.conf=intact` 在所有項目都表示它未被改動。3.7 改驗 distrobox.conf 的隔離區塊；3.8 驗 terminal none 的移除；3.9 改驗 PR #351 的 Ghostty 單區塊搬移。其餘項目保留寫入／移除兩側的使用者內容判準。#178 的五條 setup 路徑單元案例已由 PR #227 交付，新增驗收範圍留在 #231。
 
@@ -895,7 +895,7 @@ rc=0
       status-rc=0
       ```
   - [ ] 3.11 既有受管檔案的 0644／0600 模式不變
-    - 驗收方式：`just verify setup 3.11`。各以 legacy `config` 與 `config.ghostty` 當目標，種下使用者內容及 0644／0600，真的寫入 dev、改寫成 second、再以 `--auto-enter no` 移除 Ghostty 區塊；每步以 `stat -c %a` 比較 Ghostty、distrobox.conf 與 worktool 狀態檔。後兩檔在移除操作中仍保留；host tmux.conf 不受管理。
+    - 驗收方式：`just verify setup 3.11`。各以 legacy `config` 與 `config.ghostty` 當目標，種下使用者內容及 0644／0600，真的寫入 dev、改寫成 second、再以 `--auto-enter no` 移除 Ghostty 區塊；每步以 `stat -c %a` 比較 Ghostty、distrobox.conf 與 worktool 狀態檔。後兩檔在移除操作中仍保留；host tmux.conf 不受管理，每次寫入、改寫與移除後都檢查 `~/.tmux.conf` 的使用者內容。
     - 下列為 Docker 實跑輸出的判準行（依原順序）；各步 setup／status exit 0，區塊以外的使用者內容保持完整。
       ```text
       setup-rc=0
