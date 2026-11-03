@@ -1381,6 +1381,29 @@ _window_input() {
     assert_output --partial "backup-removed=1"
 }
 
+@test "#711: 5.2 fixture and documented auto-enter sources match real setup and status" {
+    local setup_line status_line section
+    export FAKE_JUST_BOX_SCRIPT_DIR="${REPO_ROOT}/script/box"
+    run "${STUBS}/just" box setup --terminal ghostty --auto-enter yes --box dev
+    assert_success
+    setup_line="$(printf '%s\n' "${output}" | grep '^\[INFO\] auto-enter:')"
+    run "${STUBS}/just" box status
+    assert_success
+    status_line="$(printf '%s\n' "${output}" | grep '^auto-enter:')"
+    unset FAKE_JUST_BOX_SCRIPT_DIR
+
+    run "${STUBS}/just" box setup --terminal ghostty --auto-enter yes --box dev
+    assert_success
+    assert_output "${setup_line}"
+    run "${STUBS}/just" box status
+    assert_success
+    assert_output "${status_line}"
+    section="$(sed -n '/^  - \[ \] 5\.2 開終端/,/^  - \[ \] 5\.3 /p' \
+        "${REPO_ROOT}/doc/acceptance.md")"
+    [[ "${section}" == *"${setup_line}"* ]]
+    [[ "${section}" == *"${status_line}"* ]]
+}
+
 @test "#513: 5.2 documented backup and restore lines follow the actual output order" {
     local _actual _documented _keys
     _fake_window_process
@@ -2409,7 +2432,15 @@ EOF
     _just="$(cat "${STATE}/real/just")"
     for _verb in assemble setup status; do
         _args=()
-        [[ "${_verb}" == status ]] || _args=(--dry-run)
+        case "${_verb}" in
+            assemble) _args=(--dry-run) ;;
+            setup) _args=(--dry-run --terminal ghostty --auto-enter yes --box dev) ;;
+            status)
+                # Status reads persisted choices; a setup dry-run cannot supply them.
+                run "${_just}" box setup --terminal ghostty --auto-enter yes --box dev
+                assert_success
+                ;;
+        esac
         run "${_just}" box "${_verb}" "${_args[@]}"
         assert_success
         _real="${output}"
