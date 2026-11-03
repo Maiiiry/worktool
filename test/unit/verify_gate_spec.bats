@@ -250,6 +250,7 @@ _system_real_block() {
             COMMAND_FINISHED=no >/dev/null
         printf '%s\n' 'ok 15 ghostty chain: with gtk-single-instance on, a forwarded launch exits 0 while the command it asked for has not begun yet (the false positive the guard prevents)'
         diagnostic_lines chain-desktop-path "${_marker}" >/dev/null
+        diagnostic_in_box chain-desktop-path 'mnt:[1234]' ca83e9d035cd >/dev/null
         printf '%s\n' "ok 16 ghostty chain (#175): the absolute distrobox path just box setup writes enters the box from a desktop session's PATH"
     } 3>&1
 }
