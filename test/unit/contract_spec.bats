@@ -312,3 +312,11 @@ _check_evidence_tree() {
     assert_output --partial "test/unit/link_spec.bats"
     refute_output --partial "待補，由 #199 實作"
 }
+
+@test "#728: verify exit 3 is unavailable or inconclusive with verification references" {
+    run bash -c 'grep -A1 "^- \*\*永不靜默失敗" "$1"' _ "${CONTRACT}"
+    assert_success
+    assert_output --regexp 'just verify.*`3`.*UNAVAILABLE.*未判定'
+    assert_output --partial "test/unit/verify_all_spec.bats"
+    assert_output --partial "test/unit/verify_gate_spec.bats"
+}
