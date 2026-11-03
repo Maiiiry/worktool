@@ -509,9 +509,22 @@ just test selfcheck
 agent spec;matrix:`enforce_milestone_gate_approval_spec`、`enforce_no_attribution_spec`;integration:`smoke_spec`、`assemble_spec`、`setup_spec`;system shim:
 `real_assemble_spec`;system-real:`real_engine_spec`;
 acceptance:`m2_selfcheck_spec`),bats 跑之前逐檔確認**存在且至少定義一個案例**
-(`bats --count`),跑完再確認 TAP 計畫涵蓋這些案例、至少跑了一個、無失敗、無
-`skip`:必要 spec 被刪、被清空、被 `skip` 都不會因為同層還有別的 spec 而被當成
-綠燈;非必要的額外 spec 照常一起跑。各 bats tier 預設以
+(`bats --count`),跑完再確認 TAP 計畫涵蓋這些案例、至少跑了一個、無失敗，且沒有
+未獲豁免的 `skip`。必要 spec 被刪、被清空、出現未獲豁免的 `skip` 都不會因為
+同層還有別的 spec 而被當成綠燈;非必要的額外 spec 照常一起跑。
+
+唯一 skip 例外：未設 `WORKTOOL_STRESS=1`（未設定或值不是 `1`）時，unit 層只允許以下三個 CPU 負載重現案例以列出的訊息 skip。
+除此之外，每層都不得有任何 skip；設 `WORKTOOL_STRESS=1` 時，這三個案例也不得 skip。
+案例名稱與訊息必須完全符合 `script/test/test.sh` 的豁免清單；另跑重現案例的切片指令見
+[`acceptance.md` 2.1](acceptance.md)。
+
+| 案例名稱 | skip 訊息（TAP 後綴） |
+| --- | --- |
+| `verify_run: HUP under CPU load always finishes before cleanup` | `# skip set WORKTOOL_STRESS=1 to run CPU repro` |
+| `5.1: group HUP under CPU load finishes before cleanup during assemble and bench` | `# skip set WORKTOOL_STRESS=1 to run CPU repro` |
+| `timeout cleanup: TERM-ignoring just descendant under CPU load` | `# skip set WORKTOOL_STRESS=1 to run CPU repro` |
+
+各 bats tier 預設以
 `WORKTOOL_TEST_JOBS=4` 跨 spec 並行、同一 spec 內序列執行;可在 `just` 前設定正整數
 覆寫(例如 `WORKTOOL_TEST_JOBS=2 just test unit`),無效值在啟動 Docker 或 bats 前以
 exit 2 拒絕。`test/unit/ci_gate_spec.bats` 在 repo 副本上以
