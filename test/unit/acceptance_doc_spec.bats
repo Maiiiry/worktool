@@ -470,3 +470,13 @@ _compare_52_doc() {
     [[ "${section}" == *'預期看到資訊(每格為 `1`)'* ]]
     [[ "${section}" != *'每行數字 >= 1'* ]]
 }
+
+@test "6.3: evidence documentation lists every failure word" {
+    local section word
+    section="$(sed -n '/^  - \[ \] 6\.3 /,/^## M4 /p' "${REPO_ROOT}/doc/acceptance.md")"
+    for word in blocked NOT gh-failed no-codex BAD \
+        '#N no-follow-up' '#N no-fix-pr' '#N no-claude-comment' \
+        '#N grep-failed' '#N bad-fix-pr'; do
+        [[ "${section}" == *"\`${word}\`"* ]]
+    done
+}
