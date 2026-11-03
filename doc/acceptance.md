@@ -1220,7 +1220,7 @@ rc=0
       just verify evidence 6.1; echo rc=$?
       ```
   - [ ] 6.2 決策與研究都在 issue 上,且是具體結論:#22 的 [claude] 留言有實測 `median=.. ms` 與「維持 docker + 預設 runc」;#148 有「只用 LTS」與「ubuntu-24.04-arm」;#21 有「預設 = 直接進盒」與「印 log」
-    - 預期看到資訊(每行數字 >= 1)
+    - 預期看到資訊(每格為 `1`)
       輸出類型：動態示例；編號、數量、SHA、行號與實測值不逐字比對，固定判準依本項說明。
       ```text
       #22 median-ms:1 runc:1

@@ -463,3 +463,10 @@ _compare_52_doc() {
     run _compare_52_doc "${doc}" "${DOC_52_OUTPUT}"$'\nphase=first-start' "${DOC_52_STDERR}"
     assert_failure
 }
+
+@test "6.2: evidence documentation requires every cell to be exactly one" {
+    local section
+    section="$(sed -n '/^  - \[ \] 6\.2 /,/^  - \[ \] 6\.3 /p' "${REPO_ROOT}/doc/acceptance.md")"
+    [[ "${section}" == *'預期看到資訊(每格為 `1`)'* ]]
+    [[ "${section}" != *'每行數字 >= 1'* ]]
+}
