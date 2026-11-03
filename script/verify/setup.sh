@@ -564,12 +564,15 @@ _seed_user_content() {
 # accepted here, and a stripper that empties the file would otherwise get to
 # report that the file was empty all along.
 _user_lines_of() {
-    local _file="$1" _line _skip=0
+    local _file="$1" _line _skip=0 _newline
     [[ -f "${_file}" && -r "${_file}" ]] || {
         _fail "cannot read ${_file} to check the user content survived"
         return 1
     }
-    while IFS= read -r _line || [[ -n "${_line}" ]]; do
+    while :; do
+        _newline=1
+        IFS= read -r _line || _newline=0
+        [[ "${_newline}" -eq 1 || -n "${_line}" ]] || break
         if [[ "${_line}" == "${VERIFY_BLOCK_BEGIN}" ]]; then
             _skip=1
             continue
@@ -579,7 +582,8 @@ _user_lines_of() {
             continue
         fi
         [[ "${_skip}" -eq 1 ]] && continue
-        printf '%s\n' "${_line}"
+        printf '%s' "${_line}"
+        if [[ "${_newline}" -eq 1 ]]; then printf '\n'; fi
     done <"${_file}"
     return 0
 }

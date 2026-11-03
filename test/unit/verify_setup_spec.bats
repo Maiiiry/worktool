@@ -1392,3 +1392,10 @@ _degrade_setup_line() {
     assert_failure 1
     assert_line 'user-content after-write: ghostty=intact tmux.conf=LOST'
 }
+
+@test "#713 content: a missing final newline is detected" {
+    _stub_just_setup_writing missing-newline
+    run "${VERIFY}" 3.7
+    assert_failure 1
+    assert_line 'user-content after-write: ghostty=intact tmux.conf=LOST'
+}
