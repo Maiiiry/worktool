@@ -592,7 +592,7 @@ _stub_busy_latency() {
         "${REPO_ROOT}/test/system/real_engine_spec.bats" | while IFS= read -r _test; do
         printf '%s\n' "${_test}" >>"${_fixture}"
         cat >>"${_fixture}" <<'EOF'
-    run bash -c 'echo "[ERROR] host too busy to measure (inconclusive): /proc/pressure/cpu some avg10=3.00 for 60s; loadavg=4; re-run when idle" >&2; exit 3'
+    run bash -c 'if [[ ${BUSY_MULTILINE:-0} == 1 ]]; then echo "[INFO] waiting for a quiet host"; fi; echo "[ERROR] host too busy to measure (inconclusive): /proc/pressure/cpu some avg10=3.00 for 60s; loadavg=4; re-run when idle" >&2; exit 3'
     if [[ "${BATS_TEST_DESCRIPTION}" == *'exits 0 ('* ]]; then
         assert_success
     else
@@ -661,6 +661,14 @@ EOF
         assert_failure 1
         refute_output --partial '未判定、請在閒置時重跑'
     done
+}
+
+@test "2.1: multiline bench diagnostics preserve the inconclusive verdict" {
+    _stub_ci_tools
+    _stub_busy_latency
+    BUSY_MULTILINE=1 PATH="${BIN}:${PATH}" run "${COPY_GATE}" 2.1
+    assert_failure 3
+    assert_output --partial '未判定、請在閒置時重跑'
 }
 
 @test "control: a just test exiting 0 passes item 2.1" {

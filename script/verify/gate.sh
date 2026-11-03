@@ -587,7 +587,7 @@ _only_busy_latency() {
             next
         }
         active && failed && /^# (status : 3|actual   : 3)$/ { status3 = 1 }
-        active && failed && /^# (output *: )?\[ERROR\] host too busy (to measure|mid-run) \(inconclusive\): .*re-run when idle$/ { busy = 1 }
+        active && failed && /^# (output *: |  )?\[ERROR\] host too busy (to measure|mid-run) \(inconclusive\): .*re-run when idle$/ { busy = 1 }
         /^Bail out!/ { bad = 1 }
         /^\[ci\] ERROR:/ {
             if ($0 != "[ci] ERROR: system-real bats failed" || !active || count != plan) bad = 1
