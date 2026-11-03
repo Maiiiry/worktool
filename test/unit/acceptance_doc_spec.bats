@@ -387,6 +387,7 @@ _prepare_52_doc_tools() {
     _auto_window_tools
     cp "${STUBS}/just" "${STATE}/just"
     export DOC_ENTER="${REPO_ROOT}/script/box/enter.sh"
+    export FAKE_JUST_BOX_SCRIPT_DIR="${REPO_ROOT}/script/box"
     cat >"${STUBS}/just" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -421,10 +422,16 @@ _52_doc_stream() {
 
 _normalize_52_doc() {
     sed -E 's@[a-f0-9]{64}@<sha>@g;
-        s@/tmp/[^ ]+@<path>@g;
+        s@/(tmp|source)/[^ ]+@<path>@g;
         s/after [0-9]+s/after <elapsed>/g;
         s/pid=[0-9]+/pid=<pid>/g;
         s/mnt:\[[0-9]+\]/mnt:[<ns>]/g'
+}
+
+_normalize_52_doc_stderr() {
+    # Section 5.2 excerpts setup diagnostics, keeping the auto-enter source.
+    sed -E '/^\[INFO\] (terminal:|box:|ghostty config:|distrobox:|wrote:|Ghostty config changed:)/d' |
+        _normalize_52_doc
 }
 
 _assert_52_doc() {
@@ -443,8 +450,8 @@ _compare_52_doc() {
     assert_equal "$(printf '%s\n' "${output}" | _normalize_52_doc)" \
         "$(printf '%s\n' "${expected}" | _normalize_52_doc)" || return 1
     expected="$(_52_doc_stream "$1" stderr)"
-    assert_equal "$(printf '%s\n' "${stderr}" | _normalize_52_doc)" \
-        "$(printf '%s\n' "${expected}" | _normalize_52_doc)"
+    assert_equal "$(printf '%s\n' "${stderr}" | _normalize_52_doc_stderr)" \
+        "$(printf '%s\n' "${expected}" | _normalize_52_doc_stderr)"
 }
 
 @test "#691: acceptance 5.2 compares first-start stdout and stderr bidirectionally" {
