@@ -673,6 +673,7 @@ EOF
 
 @test "2.1: preserves stdout and stderr for passing and busy latency runs" {
     bats_require_minimum_version 1.5.0
+    local stderr=""
     _stub_ci_tools
     _stub just <<'EOF'
 printf '1..1\nok 1 the gate is green\n'
