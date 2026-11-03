@@ -471,6 +471,6 @@ _compare_52_doc() {
         [[ "${paragraph}" == *"${item}"* ]]
     done
     section="$(sed -n '/^  - \[ \] 3\.11 /,/^  - \[ \] 3\.12 /p' "${REPO_ROOT}/doc/acceptance.md")"
-    [[ "${section}" == *'每次寫入、改寫與移除後都檢查 `~/.tmux.conf` 的使用者內容'* ]]
+    [[ "${section}" == *"每次寫入、改寫與移除後都檢查 \`~/.tmux.conf\` 的使用者內容"* ]]
     [[ "${paragraph}" == *'檔尾空白行與最後換行'* ]]
 }

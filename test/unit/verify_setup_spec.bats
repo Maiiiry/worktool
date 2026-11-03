@@ -1226,11 +1226,10 @@ _assert_setup_verbatim() {
 @test "setup acceptance controls do not write agent state into the checkout" {
     local _repo _item
     _repo="$(_repo_copy)"
-    local REPO_ROOT="${_repo}"
-    cd "${REPO_ROOT}"
+    cd "${_repo}"
     for _item in 3.10 3.11 3.12 3.13; do
         _setup_acceptance_control "${_item}"
-        assert [ ! -e "${REPO_ROOT}/.agents" ]
+        assert [ ! -e "${_repo}/.agents" ]
     done
 }
 
@@ -1339,6 +1338,7 @@ _degrade_setup_line() {
 
 @test "#713 3.1: every documented dry-run line occurs exactly once" {
     local criterion corruption
+    local -x VERIFY_CRITERION
     for criterion in 'ghostty config:' 'distrobox.conf (managed block:'; do
         export VERIFY_CRITERION="${criterion}"
         for corruption in omit-line duplicate-line; do
@@ -1352,6 +1352,7 @@ _degrade_setup_line() {
 
 @test "#713 3.5: refusal product lines occur exactly once" {
     local criterion corruption
+    local -x VERIFY_CRITERION
     for criterion in 'auto-enter:' 'terminal: ghostty' 'terminal detected:' 'box: dev' 'ghostty config:' '[ERROR] distrobox:'; do
         export VERIFY_CRITERION="${criterion}"
         for corruption in omit-line duplicate-line; do
@@ -1365,6 +1366,7 @@ _degrade_setup_line() {
 
 @test "#713 3.10: fixed setup and status lines occur exactly once" {
     local criterion corruption
+    local -x VERIFY_CRITERION
     for criterion in 'auto-enter:' 'terminal: ghostty' 'box: dev' 'ghostty config:' '[INFO] distrobox:' 'wrote:' 'unchanged:' 'Ghostty config changed:' 'config:' 'distrobox:' 'link:' 'home:' 'wrapper:'; do
         export VERIFY_CRITERION="${criterion}"
         for corruption in omit-line duplicate-line; do
@@ -1377,6 +1379,7 @@ _degrade_setup_line() {
 
 @test "#713 3.3: removal rejects tmux decisions and removal messages" {
     local message
+    local -x VERIFY_CRITERION
     for message in '[INFO] tmux: host (default)' '[INFO] removed: /throwaway/.tmux.conf (managed block: old)'; do
         export VERIFY_CRITERION="${message}"
         _stub_just_setup_writing tmux-message
@@ -1416,6 +1419,7 @@ _degrade_setup_line() {
 
 @test "#713 diagnostics: refusal checks the setup recipe name and exit code" {
     local item corruption
+    local -x VERIFY_CRITERION
     export VERIFY_CRITERION='error: Recipe'
     for item in 3.5 3.10; do
         for corruption in omit-line duplicate-line; do

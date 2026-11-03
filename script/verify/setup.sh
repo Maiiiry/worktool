@@ -1094,7 +1094,7 @@ _require_no_distrobox_on_path() {
 # Just versions vary in capitalization and recipe line numbers.
 _expect_setup_failure() {
     local _line _count=0
-    local _pattern='^error: [Rr]ecipe `setup` failed on line [0-9]+ with exit code 1$'
+    local _pattern="^error: [Rr]ecipe \`setup\` failed on line [0-9]+ with exit code 1$"
     while IFS= read -r _line; do
         if [[ "${_line}" =~ ${_pattern} ]]; then _count=$((_count + 1)); fi
     done <<<"${LAST_OUT}"
