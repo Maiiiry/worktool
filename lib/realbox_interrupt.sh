@@ -4,6 +4,7 @@ _54_W=""
 _54_PID=""
 _54_REAP_RESULT=""
 _54_POLL_FD=""
+_54_KEEP_EVIDENCE=0
 
 _54_cleanup() {
     local rc=0 failed=0
@@ -25,7 +26,7 @@ _54_cleanup() {
         _54_PID=""
     fi
     if [[ -n "${_54_POLL_FD}" ]]; then exec {_54_POLL_FD}>&-; fi
-    if [[ -n "${_54_W}" ]]; then
+    if [[ -n "${_54_W}" && "${_54_KEEP_EVIDENCE}" -eq 0 ]]; then
         rm -rf -- "${_54_W}" || failed=1
     fi
     return "${failed}"
@@ -290,7 +291,7 @@ _54_finish_cell() {
         if _54_stop_session "${_54_PID}"; then
             _54_PID=""
         else
-            log_error "interrupt ${phase} ${signal}: failed to stop owned session (pid=${_54_PID}); retaining PID for cleanup"
+            log_error "interrupt ${phase} ${signal}: failed to stop owned session (pid=${_54_PID}); will retry during cleanup"
         fi
         _54_failure_report "${phase}" "${signal}" "${child_rc}" "${dir}"
         return 1
@@ -334,6 +335,7 @@ _54_cell() {
 }
 
 item_54() {
+    _54_KEEP_EVIDENCE=0
     guard_require setsid env bash distrobox just gh grep cmp mktemp mkdir rm mkfifo || return $?
     _54_W="$(mktemp -d "${TMPDIR:-/tmp}/wt-m3-54.XXXXXXXX")" || return 1
     _cleanup_push 54
@@ -360,16 +362,12 @@ item_54() {
             printf 'interrupt-matrix: INCONCLUSIVE (host too busy, re-run when idle)\n'
         fi
     else
-        # Retry a failed cell stop before dropping its cleanup token.
-        # Keep failed evidence and any surviving owned HOME for inspection.
-        if [[ -n "${_54_PID}" ]]; then
-            if _54_stop_session "${_54_PID}"; then
-                _54_PID=""
-            else
-                log_error "interrupt cleanup: failed to stop owned session (pid=${_54_PID}); inspect ${_54_W} and stop it manually"
-            fi
+        # EXIT cleanup retries surviving sessions and records failed recovery.
+        # Keep failed evidence even when the retry stops all owned processes.
+        _54_KEEP_EVIDENCE=1
+        if [[ -z "${_54_PID}" ]]; then
+            _cleanup_drop
         fi
-        _cleanup_drop
         printf 'interrupt-matrix: FAIL\n'
     fi
     return "${rc}"

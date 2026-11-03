@@ -55,7 +55,7 @@ STUB
     run "${REALBOX}" --allow-real-box 5.4
     assert_failure 1
     assert_line --partial 'failed to stop owned session (pid='
-    assert_line --partial 'retaining PID for cleanup'
+    assert_line --partial 'will retry during cleanup'
     assert_line 'interrupt-matrix: FAIL'
     local pid evidence
     read -r pid <"${MATRIX_STATE}/child.pid"
@@ -66,6 +66,37 @@ STUB
     assert_failure 1
     evidence=("${TMPDIR}"/wt-m3-54.*/assemble-INT/capture)
     [ -f "${evidence[0]}" ]
+}
+
+@test "#710: failed cell and failed session stops preserve manual recovery evidence" {
+    _matrix_failed_cell_resident
+    printf 'verify_stop_group() { return 1; }\n' \
+        >>"${MATRIX_STATE}/repo/lib/verify_run.sh"
+    local stderr="" pid evidence
+    run --separate-stderr "${REALBOX}" --allow-real-box 5.4
+    assert_failure 1
+    assert_line 'interrupt-matrix: FAIL'
+    refute_output --partial 'posted=0 PASS'
+    read -r pid <"${MATRIX_STATE}/child.pid"
+    local -a records=("${TMPDIR}"/wt-m3-54.*/cleanup.pid)
+    [ -f "${records[0]}" ]
+    [ "$(cat "${records[0]}")" = "${pid}" ]
+    evidence="${records[0]%/cleanup.pid}"
+    [ -f "${evidence}/assemble-INT/capture" ]
+    [[ "${stderr}" == *"[ERROR] interrupt cleanup: kept evidence=${evidence}; pid-record=${evidence}/cleanup.pid; pid=${pid}"* ]]
+    [[ "${stderr}" == *"[ERROR] interrupt cleanup: surviving processes in owned session ${pid}:"* ]]
+    [[ "${stderr}" == *'[ERROR] interrupt cleanup: surviving process: pid='* ]]
+    [[ "${stderr}" == *'[ERROR] interrupt cleanup: manual recovery:'* ]]
+}
+
+_matrix_failed_cell_resident() {
+    _matrix_child_stub
+    sed -i '/^sleep "${MATRIX_READY_DELAY/,$d' "${MATRIX_STATE}/child"
+    cat >>"${MATRIX_STATE}/child" <<'STUB'
+trap '' TERM
+sleep 30 &
+exit 130
+STUB
 }
 
 @test "5.4: comment tags reach every child unchanged and stay absent when omitted" {
