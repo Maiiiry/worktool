@@ -265,7 +265,8 @@ Stdout carries exactly the lines doc/acceptance.md shows as the expected
 output; progress and diagnostics go to stderr.
 
 Exit codes: 0 pass, 1 an item failed, 2 usage error, 3 the check cannot run
-here (a required tool or file is missing - never a silent skip).
+here (a required tool or file is missing - never a silent skip), or
+the latency gate is inconclusive (host busy).
 
 Environment:
   GATE_TIMEOUT     seconds allowed per `just test` run (default: 5400).

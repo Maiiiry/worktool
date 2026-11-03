@@ -932,6 +932,7 @@ EOF
     assert_success
     assert_output --partial 'Usage: gate.sh [ITEM...]'
     assert_output --partial '3 the check cannot run'
+    assert_output --partial 'the latency gate is inconclusive (host busy)'
 }
 
 @test "cli: an unknown option exits 2 and names the option" {
