@@ -12,7 +12,7 @@ worktool/
 ├── lib/                 共用 bash helper(被 tool/box/script 腳本 source)
 │   ├── config_backup.sh 設定檔備份、重新驗證與還原（5.2 實機驗收）
 │   ├── distrobox_manager.sh 解析 distrobox 使用的容器管理器
-│   ├── guard.sh         驗收前置檢查與拒絕條件
+│   ├── guard.sh         失敗封閉的狀態原語，區分不存在與無法判定，避免失敗被當作通過
 │   ├── verify_run.sh    驗收執行、逾時與行程群組清理
 │   ├── realbox_interrupt.sh 實機驗收中斷處理與復原
 │   ├── log.sh           日誌 helper:log_info / log_warn / log_error(寫入 stderr)

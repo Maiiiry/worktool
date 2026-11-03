@@ -247,6 +247,14 @@ _checks_per_promise() {
     done < <(find "${REPO_ROOT}/test/unit/fixture" -type f | sort)
 }
 
+@test "#724: structure describes guard as fail-closed status primitives" {
+    run grep -F '── guard.sh ' "${REPO_ROOT}/doc/structure.md"
+    assert_success
+    assert_output --partial '失敗封閉的狀態原語'
+    assert_output --partial '區分不存在與無法判定'
+    refute_output --partial '驗收前置檢查與拒絕條件'
+}
+
 _check_evidence_tree() {
     local root="$1" files
     files=$(cd "${root}/doc/evidence" && find . -type f | sed 's|^./||' | sort)
