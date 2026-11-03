@@ -1018,3 +1018,9 @@ EOF
     assert_line 'rm -f -v owned-container'
     refute_output --partial prune
 }
+
+@test "#714: system-real selection removes only the dead chain-host alternative" {
+    run sed -n '/^SYSTEM_REAL_PATTERN=/p' "${GATE_SH}"
+    assert_success
+    assert_output "SYSTEM_REAL_PATTERN='^# (chain|hang|single-instance)|^ok .*ghostty chain|^not ok'"
+}

@@ -116,7 +116,7 @@ TDD_PRS=(152 153 154 155 156 165 166 167 168 169)
 # run has to exercise to produce them. The pattern SELECTS the block the
 # document prints; the arrays below are what that block has to CONTAIN.
 INTEGRATION_PATTERN='^ok .*ghostty|^not ok'
-SYSTEM_REAL_PATTERN='^# (chain|chain-host|hang|single-instance)|^ok .*ghostty chain|^not ok'
+SYSTEM_REAL_PATTERN='^# (chain|hang|single-instance)|^ok .*ghostty chain|^not ok'
 
 # The `ok` cases doc/acceptance.md lists for each tier, keyed by the case
 # DESCRIPTION rather than by `ok <n>`: bats numbers shift whenever a case is
