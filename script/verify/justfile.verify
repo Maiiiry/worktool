@@ -16,7 +16,7 @@
 # is validated here and no usage text lives here: `just verify help` runs
 # each script's --help in turn, and an unknown option or an unknown item is
 # refused by the script itself (`<script>.sh: unknown option '<x>' (see
-# --help)`, exit 2).
+# --help)`, exit 2; setup uses the prefix `verify/setup.sh` instead).
 #
 # These are the acceptance checks of doc/acceptance.md: the checklist no
 # longer carries shell logic, every 驗收方式 block is one `just verify ...`
@@ -54,19 +54,19 @@ ui *args:
 gate *args:
     ./script/verify/gate.sh "$@"
 
-# Acceptance items 3.1-3.13: auto-enter setup and status, each under a throwaway HOME (args: ITEM, --list, --help).
+# Acceptance items 3.1-3.13: auto-enter setup and status, each under a throwaway HOME (args: ITEM, --list, --allow-real-box, --help).
 setup *args:
     ./script/verify/setup.sh "$@"
 
-# Acceptance item 4.1: the three README draw.io diagrams (args: ITEM, --root <repo>, --help).
+# Acceptance item 4.1: the three README draw.io diagrams (args: ITEM, --root <repo>, --list, --realbox, --help).
 diagram *args:
     ./script/verify/diagram.sh "$@"
 
-# Acceptance items 5.1-5.4: the real machine; needs --allow-real-box (args: ITEM, --allow-real-box, --repo, --issue, --comment-tag, --box, --image, --help).
+# Acceptance items 5.1-5.4: the real machine; needs --allow-real-box (args: ITEM, --list, --allow-real-box, --repo, --issue, --comment-tag, --box, --image, --help).
 realbox *args:
     ./script/verify/realbox.sh "$@"
 
-# Acceptance items 6.1-6.3: the external CI and process evidence, through gh (args: ITEM, --list, --help).
+# Acceptance items 6.1-6.3: the external CI and process evidence, through gh (args: ITEM, --list, --allow-realbox, --help).
 evidence *args:
     ./script/verify/evidence.sh "$@"
 

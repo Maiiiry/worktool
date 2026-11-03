@@ -97,9 +97,9 @@ guard_box_id() {
 
 # --- Files -------------------------------------------------------------------
 
-# `sha256sum | cut`, collected FIRST so sha256sum's status is not hidden behind
-# cut's, and validated as 64 hex digits so a mangled read cannot be stored as a
-# plausible-looking checksum.
+# `sha256sum | cut` relies on the caller's pipefail to propagate sha256sum's
+# failure. Validate the output as 64 hex digits so a mangled read cannot be
+# stored as a plausible-looking checksum.
 guard_sha256() {
     local _out
     _out="$(sha256sum -- "$1" | cut -d' ' -f1)" || return 1
