@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Event-driven supervisor for the real-machine 5.1 interrupt matrix.
+# Event-driven supervisor for the real-machine 5.4 interrupt matrix.
 _54_W=""
 _54_PID=""
 _54_REAP_RESULT=""

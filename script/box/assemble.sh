@@ -39,6 +39,8 @@
 # the state file (lib/config.sh) after a successful run. The same resolved
 # HOME supplies TMUX_TMPDIR=<box HOME>/.cache/tmux to the create environment;
 # the manifest forwards it into the container with --env (#361).
+# The create environment also sets SHELL=/usr/bin/fish so distrobox records
+# fish as the box user's shell (#472).
 # An EXISTING box whose
 # HOME differs is refused - exit 1, nothing changed, the remove-and-recreate
 # commands printed - because only a new box can take a new HOME; worktool
