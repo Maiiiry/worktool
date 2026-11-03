@@ -1349,3 +1349,16 @@ _degrade_setup_line() {
         done
     done
 }
+
+@test "#713 3.5: refusal product lines occur exactly once" {
+    local criterion corruption
+    for criterion in 'auto-enter:' 'terminal: ghostty' 'terminal detected:' 'box: dev' 'ghostty config:' '[ERROR] distrobox:'; do
+        export VERIFY_CRITERION="${criterion}"
+        for corruption in omit-line duplicate-line; do
+            _stub_just_setup_writing "${corruption}"
+            run "${VERIFY}" 3.5
+            assert_failure 1
+            assert_output --partial 'expected exactly one line'
+        done
+    done
+}

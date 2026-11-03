@@ -1088,6 +1088,16 @@ _require_no_distrobox_on_path() {
     fi
 }
 
+_expect_refusal_lines() {
+    _expect_lines 3.5 \
+        '[INFO] auto-enter: yes (default)' \
+        '[INFO] terminal: ghostty (default)' \
+        '[INFO] terminal detected: ghostty (ghostty executable <H>/bin/ghostty)' \
+        '[INFO] box: dev (default)' \
+        '[INFO] ghostty config: <H>/.config/ghostty/config (config.ghostty absent; legacy fallback)' \
+        '[ERROR] distrobox: not found on PATH - the managed command must name an absolute path a terminal launched from the desktop can run (install distrobox, or pass --distrobox <path>); nothing was written'
+}
+
 _item_3_5() {
     _require_tools env just sed find wc grep ln mktemp || return $?
     _item_begin || return 1
@@ -1127,6 +1137,7 @@ _item_3_5() {
     _env+=("PATH=${_path}")
     _run_norm "${_env[@]}" just box setup || return 1
     _refuse_rc="${LAST_RC}"
+    _expect_refusal_lines || _bad=1
     printf 'rc=%s\n' "${_refuse_rc}"
     _files="$(_count_files "${ITEM_H}")" || return 1
     printf 'files %s->%s\n' "${_before}" "${_files}"
