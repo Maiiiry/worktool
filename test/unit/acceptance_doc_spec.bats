@@ -463,3 +463,10 @@ _compare_52_doc() {
     run _compare_52_doc "${doc}" "${DOC_52_OUTPUT}"$'\nphase=first-start' "${DOC_52_STDERR}"
     assert_failure
 }
+
+@test "#714: acceptance 2.3 limits exact case counts to selected ok lines" {
+    local section
+    section="$(sed -n '/^  - \[ \] 2\.3 /,/^  - \[ \] 2\.4 /p' "${REPO_ROOT}/doc/acceptance.md")"
+    [[ "${section}" == *'只適用於 pattern 選中的 `ok` 行（含 ghostty）'* ]]
+    [[ "${section}" == *'其餘案例的失敗由 `^not ok` 與 tier rc 擋住'* ]]
+}
