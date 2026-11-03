@@ -299,6 +299,25 @@ _dispatched() {
     assert_success
 }
 
+@test "changed path map covers every tracked verify file and library" {
+    run bash -c '
+        source "$1/script/test/test.sh"
+        paths=$(git -c "safe.directory=$1" -C "$1" ls-files "script/verify/*" "lib/*.sh") \
+            || exit 1
+        [[ -n "$paths" ]] || exit 1
+        missing=0
+        while IFS= read -r path; do
+            if [[ -z "$(_mapped_specs "$path")" ]]; then
+                printf "missing changed path mapping: %s\n" "$path"
+                missing=1
+            fi
+        done <<<"$paths"
+        exit "$missing"
+    ' _ "${REPO_ROOT}"
+
+    assert_success
+}
+
 @test "test.sh --changed leaves unmapped files to CI and names each file" {
     _commit_baseline
     mkdir -p "${TEMP_REPO}/lib"
