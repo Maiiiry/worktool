@@ -606,6 +606,11 @@ printf '[ci] acceptance bats OK\n[ci] Running system-real bats (test/system/real
 bats --formatter tap '${_fixture}'
 rc=\$?
 printf '[ci] ERROR: system-real bats failed\n' >&2
+printf '%s\n' '[system-real] cleanup: containers left in the nested daemon: 0' \
+    '[system-real] stopping nested dockerd (pid 123)' \
+    '[system-real] --- dockerd log (tail): /var/log/worktool-dockerd.log' \
+    'time=2026-11-03 level=info msg=shutdown' \
+    '[system-real] --- end of dockerd log'
 exit "\${rc}"
 EOF
 }
@@ -618,6 +623,44 @@ EOF
     assert_output --partial '未判定、請在閒置時重跑'
     refute_output --partial 'PASSED'
     refute_output --partial 'FAILED'
+    cp "${REPO_ROOT}/script/verify/all.sh" "${COPY}/script/verify/all.sh"
+    printf '#!/usr/bin/env bash\nexit 0\n' >"${COPY}/script/verify/ui.sh"
+    chmod +x "${COPY}/script/verify/ui.sh"
+    PATH="${BIN}:${PATH}" run "${COPY}/script/verify/all.sh"
+    assert_failure 3
+    assert_line 'verify all: gate UNAVAILABLE (rc=3)'
+    refute_output --partial 'gate PASS'
+}
+
+@test "2.1: mixed failures and unreliable latency evidence stay failed" {
+    _stub_ci_tools
+    _stub_busy_latency
+    local _transcript="${BATS_TEST_TMPDIR}/busy.tap" _rc=0 _mode
+    "${BIN}/just" >"${_transcript}" 2>&1 || _rc=$?
+    [[ "${_rc}" -eq 1 ]]
+    for _mode in mixed infrastructure missing-status missing-busy truncated; do
+        cp "${_transcript}" "${SYS_BLOCK}"
+        case "${_mode}" in
+            mixed)
+                sed -i 's/^1\.\.2$/1..3/' "${SYS_BLOCK}"
+                printf 'not ok 3 real engine: fish is broken\n' >>"${SYS_BLOCK}" ;;
+            infrastructure)
+                printf '[system-real] ERROR: runner cleanup failed\n' >>"${SYS_BLOCK}" ;;
+            missing-status)
+                sed -i '/^# status : 3$/d; /^# actual   : 3$/d' "${SYS_BLOCK}" ;;
+            missing-busy)
+                sed -i '/host too busy/d' "${SYS_BLOCK}" ;;
+            truncated)
+                sed -i 's/^1\.\.2$/1..3/' "${SYS_BLOCK}" ;;
+        esac
+        _stub just <<EOF
+cat '${SYS_BLOCK}'
+exit 1
+EOF
+        PATH="${BIN}:${PATH}" run "${COPY_GATE}" 2.1
+        assert_failure 1
+        refute_output --partial '未判定、請在閒置時重跑'
+    done
 }
 
 @test "control: a just test exiting 0 passes item 2.1" {

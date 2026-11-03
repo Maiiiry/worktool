@@ -558,6 +558,9 @@ _check_tier_order() {
 # latency assertions with exit 3 AND bench's busy-host diagnostic.
 _only_busy_latency() {
     awk '
+        /^\[system-real\] --- dockerd log \(tail\): / && errors == 1 && !in_log { in_log = 1; next }
+        /^\[system-real\] --- end of dockerd log$/ && in_log { in_log = 0; next }
+        in_log { next }
         function finish() {
             if (failed && (!latency || !status3 || !busy)) bad = 1
         }
@@ -588,11 +591,15 @@ _only_busy_latency() {
         /^Bail out!/ { bad = 1 }
         /^\[ci\] ERROR:/ {
             if ($0 != "[ci] ERROR: system-real bats failed" || !active || count != plan) bad = 1
-            errors++
+            errors++; next
         }
+        active && plan && !/^#/ && !/^$/ &&
+            !/^error: [Rr]ecipe .* failed.*exit code 1$/ &&
+            !/^\[system-real\] stopping nested dockerd \(pid [0-9]+\)$/ &&
+            !/^\[system-real\] cleanup: (containers left in the nested daemon: 0|box .* still present - removing)$/ { bad = 1 }
         END {
             finish()
-            exit !(active && plan > 0 && count == plan && failures > 0 && errors == 1 && !bad)
+            exit !(active && plan > 0 && count == plan && failures > 0 && errors == 1 && !in_log && !bad)
         }
     ' "$1"
 }
