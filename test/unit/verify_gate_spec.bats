@@ -584,6 +584,42 @@ EOF
 
 # --- Item 2.1: the seven-stage run is judged by its own status ------------------
 
+# Generate real bats-assert diagnostics instead of assuming their format.
+_stub_busy_latency() {
+    local _fixture="${BATS_TEST_TMPDIR}/latency.bats"
+    printf 'load "%s/test/helper/common"\n' "${REPO_ROOT}" >"${_fixture}"
+    sed -n '/^@test "real engine: bench.sh /p' \
+        "${REPO_ROOT}/test/system/real_engine_spec.bats" | while IFS= read -r _test; do
+        printf '%s\n' "${_test}" >>"${_fixture}"
+        cat >>"${_fixture}" <<'EOF'
+    run bash -c 'echo "[ERROR] host too busy to measure (inconclusive): /proc/pressure/cpu some avg10=3.00 for 60s; loadavg=4; re-run when idle" >&2; exit 3'
+    if [[ "${BATS_TEST_DESCRIPTION}" == *'exits 0 ('* ]]; then
+        assert_success
+    else
+        assert_failure 1
+    fi
+}
+EOF
+    done
+    _stub just <<EOF
+printf '[ci] acceptance bats OK\n[ci] Running system-real bats (test/system/real_engine_spec.bats)\n'
+bats --formatter tap '${_fixture}'
+rc=\$?
+printf '[ci] ERROR: system-real bats failed\n' >&2
+exit "\${rc}"
+EOF
+}
+
+@test "2.1: only busy latency failures are inconclusive, never PASS" {
+    _stub_ci_tools
+    _stub_busy_latency
+    PATH="${BIN}:${PATH}" run "${COPY_GATE}" 2.1
+    assert_failure 3
+    assert_output --partial '未判定、請在閒置時重跑'
+    refute_output --partial 'PASSED'
+    refute_output --partial 'FAILED'
+}
+
 @test "control: a just test exiting 0 passes item 2.1" {
     _stub_ci_tools
     _stub just <<'EOF'

@@ -604,7 +604,8 @@ rc=0
       [system-real] cleanup: containers left in the nested daemon: 0
       rc=0
       ```
-      (本項把整條 `just test` 的輸出原樣串到你的終端 —— `[ci]` 那些行是 stderr,上面一起列出。數字是你機器的實測;判準 = `just test` **自己**回 0,加上 shell median ≤ 300 且三行指標都在。自動測試只證明「盒內有 tmux + fish、進盒 + 起 fish ≤ 300 ms」;「ghostty 開窗 -> 受管 command -> 盒內 fish」整條鏈由 2.3 在 CI 內驗證,實機主觀感受由 5.2 驗)
+      (本項完整擷取整條 `just test` 的輸出後原樣印到你的終端 —— `[ci]` 那些行是 stderr,上面一起列出。數字是你機器的實測;判準 = `just test` **自己**回 0,加上 shell median ≤ 300 且三行指標都在。自動測試只證明「盒內有 tmux + fish、進盒 + 起 fish ≤ 300 ms」;「ghostty 開窗 -> 受管 command -> 盒內 fish」整條鏈由 2.3 在 CI 內驗證,實機主觀感受由 5.2 驗)
+    - 依 ADR 0003，若 `just test` 回 1，且完整 system-real TAP 的所有紅燈都只來自上述兩個 bench 案例，每個紅燈都同時帶有 assertion 的 exit 3 與 bench 主機忙碌的未判定診斷，2.1 印出「延遲 gate 未判定、請在閒置時重跑」並回 3，不印 PASSED／FAILED。`just verify all` 顯示 `verify all: gate UNAVAILABLE (rc=3)`，總判決仍非通過並回 3。其他失敗、混合失敗、輸出不完整或無法可靠辨識時，一律回 1；system-real 本身仍將 bench 的 3 當紅燈，CI 不跳過 gate。2.1 先完整擷取輸出，再原樣印出供判讀。
     - 唯一 skip 例外：未設 `WORKTOOL_STRESS=1`（未設定或值不是 `1`）時，unit 層只允許以下三個 CPU 負載重現案例以列出的訊息 skip。除此之外，每層都不得有任何 skip；設 `WORKTOOL_STRESS=1` 時，這三個案例也不得 skip。案例名稱與訊息必須完全符合 `script/test/test.sh` 的豁免清單。
 
       | 案例名稱 | skip 訊息（TAP 後綴） |

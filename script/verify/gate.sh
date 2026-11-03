@@ -78,7 +78,7 @@
 #   0  every requested item passed
 #   1  an item failed (the reason is on stderr)
 #   2  usage error (unknown option, unknown item)
-#   3  the check cannot run here (a required tool or file is missing)
+#   3  the check is unavailable or the latency gate is inconclusive
 #
 # Expected failures are handled explicitly; checks run in conditionals so
 # their own exit codes and diagnostics decide the acceptance verdict.
@@ -554,24 +554,70 @@ _check_tier_order() {
 
 # --- Item 2.1 ----------------------------------------------------------------
 
-# The bare `just test` run: all six tiers, in order, stop at the first
-# failure. The run streams to the caller's terminal exactly as it does when
-# typed by hand - this item adds the one judgement the document could only
-# ask for in prose, namely that `just test`'s OWN exit status is what
-# decides, not the last line it happened to print.
-_item_2_1() {
-    local _rc=0
-    verify_run "${GATE_TIMEOUT}" just test || _rc=$?
+# Accept only complete system-real TAP whose failed cases are the two
+# latency assertions with exit 3 AND bench's busy-host diagnostic.
+_only_busy_latency() {
+    awk '
+        function finish() {
+            if (failed && (!latency || !status3 || !busy)) bad = 1
+        }
+        /^\[ci\] acceptance bats OK$/ { ready = 1 }
+        /^\[ci\] Running system-real bats / {
+            if (!ready || active) bad = 1
+            active = 1; next
+        }
+        /^1\.\.[0-9]+$/ {
+            if (plan && count != plan) bad = 1
+            if (active) { if (plan) bad = 1; plan = substr($0, 4) + 0 }
+            next
+        }
+        /^(not )?ok [0-9]+ / {
+            if (!active) { if (/^not ok /) bad = 1; next }
+            finish(); failed = /^not ok /; status3 = busy = 0
+            line = $0; sub(/^(not )?ok /, "", line)
+            number = line + 0; sub(/^[0-9]+ /, "", line)
+            count++; if (number != count || !plan || count > plan) bad = 1
+            if (line ~ /# skip/) bad = 1
+            latency = (line == "real engine: bench.sh --box dev --runs 5 --warmup 2 --shell \047fish -c exit\047 --max-ms ENTER_MAX_MS exits 0 (enter-latency gate on fish) and prints the enter, shell and inbox metric lines" ||
+                       line == "real engine: bench.sh --box dev --runs 1 --warmup 0 --shell \047fish -c exit\047 --max-ms 1 exits 1 with the threshold message (the gate bites on a real box)")
+            if (failed) failures++
+            next
+        }
+        active && failed && /^# (status : 3|actual   : 3)$/ { status3 = 1 }
+        active && failed && /^# (output *: )?\[ERROR\] host too busy (to measure|mid-run) \(inconclusive\): .*re-run when idle$/ { busy = 1 }
+        /^Bail out!/ { bad = 1 }
+        /^\[ci\] ERROR:/ {
+            if ($0 != "[ci] ERROR: system-real bats failed" || !active || count != plan) bad = 1
+            errors++
+        }
+        END {
+            finish()
+            exit !(active && plan > 0 && count == plan && failures > 0 && errors == 1 && !bad)
+        }
+    ' "$1"
+}
+
+# Capture before judging so the original command status survives TAP parsing.
+_item_2_1() (
+    local _rc=0 _dir=""
+    _make_tmpdir _dir || return 1
+    trap 'rm -rf "${_dir}"' EXIT
+    verify_run "${GATE_TIMEOUT}" just test >"${_dir}/output" 2>&1 || _rc=$?
+    cat "${_dir}/output" || return 1
     if [[ "${_rc}" -eq 124 ]]; then
         _err "\`just test\` did not finish within ${GATE_TIMEOUT}s (timeout)"
         return 1
+    fi
+    if [[ "${_rc}" -eq 1 ]] && _only_busy_latency "${_dir}/output"; then
+        printf '[UNAVAILABLE] gate.sh: 延遲 gate 未判定、請在閒置時重跑 (ADR 0003)\n' >&2
+        return "${EXIT_UNAVAILABLE}"
     fi
     if [[ "${_rc}" -ne 0 ]]; then
         _err "\`just test\` exited ${_rc} - the seven-stage gate is not green"
         return 1
     fi
     return 0
-}
+)
 
 # --- Item 2.2 ----------------------------------------------------------------
 
@@ -840,7 +886,7 @@ _item_2_4() {
 
 # --- Dispatcher --------------------------------------------------------------
 _run_item() {
-    local _id="$1" _group _fn _title
+    local _id="$1" _group _fn _title _rc=0
     _group="$(_item_group "${_id}")" || {
         _err "internal: no group for item ${_id}"
         return 1
@@ -864,7 +910,11 @@ _run_item() {
     _info "item ${_id}: ${_title}"
     # Exits EXIT_UNAVAILABLE when the item cannot be checked here.
     "_preconditions_${_group}" "item ${_id}"
-    if ! "${_fn}"; then
+    "${_fn}" || _rc=$?
+    if [[ "${_rc}" -eq "${EXIT_UNAVAILABLE}" ]]; then
+        return "${_rc}"
+    fi
+    if [[ "${_rc}" -ne 0 ]]; then
         _err "item ${_id} FAILED"
         return 1
     fi
@@ -905,7 +955,7 @@ main() {
         || _unavailable "cannot enter the repo root ${REPO_ROOT}"
 
     for _id in "${_items[@]}"; do
-        _run_item "${_id}" || exit "${EXIT_FAIL}"
+        _run_item "${_id}" || exit $?
     done
     return 0
 }
