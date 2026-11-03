@@ -110,6 +110,35 @@ STUB
     refute_output --partial 'posted=0 PASS'
 }
 
+@test "#710: EPERM while an owned group survives preserves recovery evidence" {
+    _matrix_failed_cell_resident
+    cat >>"${MATRIX_STATE}/repo/lib/realbox_interrupt.sh" <<'STUB'
+kill() {
+    if [[ "${1:-}" == -s && "${2:-}" == TERM ]]; then
+        printf 'kill: Operation not permitted\n' >&2
+        touch "${MATRIX_STATE}/kill-denied"
+        return 1
+    fi
+    builtin kill "$@"
+}
+STUB
+    local stderr="" pid evidence
+    run --separate-stderr "${REALBOX}" --allow-real-box 5.4
+    assert_failure 1
+    assert_line 'interrupt-matrix: FAIL'
+    [ -f "${MATRIX_STATE}/kill-denied" ]
+    read -r pid <"${MATRIX_STATE}/child.pid"
+    local -a records=("${TMPDIR}"/wt-m3-54.*/cleanup.pid)
+    [ -f "${records[0]}" ]
+    [ "$(cat "${records[0]}")" = "${pid}" ]
+    evidence="${records[0]%/cleanup.pid}"
+    [ -f "${evidence}/assemble-INT/capture" ]
+    [[ "${stderr}" == *"[ERROR] interrupt cleanup: kept evidence=${evidence};"* ]]
+    [[ "${stderr}" == *'[ERROR] interrupt cleanup: surviving process: pid='* ]]
+    [[ "${stderr}" == *'[ERROR] interrupt cleanup: manual recovery:'* ]]
+    refute_output --partial 'posted=0 PASS'
+}
+
 _matrix_failed_cell_resident() {
     _matrix_child_stub
     sed -i '/^sleep "${MATRIX_READY_DELAY/,$d' "${MATRIX_STATE}/child"

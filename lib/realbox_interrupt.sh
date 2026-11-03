@@ -83,6 +83,9 @@ _54_stop_session() {
         verify_stop_group "${group}" TERM || rc=1
     done <"${_54_W}/groups"
     verify_stop_group "$1" TERM || rc=1
+    # A failed signal may report success upstream; confirm the owned session.
+    _54_session_groups "$1" >"${_54_W}/groups" || return 1
+    [[ ! -s "${_54_W}/groups" ]] || rc=1
     return "${rc}"
 }
 
