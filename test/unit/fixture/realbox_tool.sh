@@ -5,9 +5,9 @@
 # test/unit/verify_realbox_spec.bats installs this file under all four names
 # in a stub directory placed first on PATH; it dispatches on $0's basename.
 #
-# Everything here uses bash BUILTINS only (no basename, grep, cp, ...): the
-# same spec also shims real coreutils to fail, and a fake that depended on
-# them would break for reasons that have nothing to do with the case at hand.
+# Dispatch and output mostly use bash builtins (no basename, grep, cp, ...)
+# because the spec also shims coreutils to fail. Side-effect models use
+# mkdir for cache/data directories and mktemp/cat for temporary manifests.
 #
 # State lives under $FAKE_STATE_DIR:
 #   boxes              one box name per line - what `distrobox list` reports
