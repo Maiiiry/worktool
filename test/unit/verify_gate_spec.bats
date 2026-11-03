@@ -602,7 +602,7 @@ _stub_busy_latency() {
 EOF
     done
     _stub just <<EOF
-printf '[ci] acceptance bats OK\n[ci] Running system-real bats (test/system/real_engine_spec.bats)\n'
+printf '[ci] acceptance bats OK\n[ci] Running system-real bats (test/system/real_engine_spec.bats)\n' >&2
 bats --formatter tap '${_fixture}'
 rc=\$?
 printf '[ci] ERROR: system-real bats failed\n' >&2
@@ -610,7 +610,7 @@ printf '%s\n' '[system-real] cleanup: containers left in the nested daemon: 0' \
     '[system-real] stopping nested dockerd (pid 123)' \
     '[system-real] --- dockerd log (tail): /var/log/worktool-dockerd.log' \
     'time=2026-11-03 level=info msg=shutdown' \
-    '[system-real] --- end of dockerd log'
+    '[system-real] --- end of dockerd log' >&2
 exit "\${rc}"
 EOF
 }
@@ -669,6 +669,29 @@ EOF
     BUSY_MULTILINE=1 PATH="${BIN}:${PATH}" run "${COPY_GATE}" 2.1
     assert_failure 3
     assert_output --partial '未判定、請在閒置時重跑'
+}
+
+@test "2.1: preserves stdout and stderr for passing and busy latency runs" {
+    bats_require_minimum_version 1.5.0
+    _stub_ci_tools
+    _stub just <<'EOF'
+printf '1..1\nok 1 the gate is green\n'
+printf '[ci] system-real bats OK\n' >&2
+EOF
+    PATH="${BIN}:${PATH}" run --separate-stderr "${COPY_GATE}" 2.1
+    assert_success
+    assert_output $'1..1\nok 1 the gate is green'
+    [[ "${stderr}" == *'[ci] system-real bats OK'* ]]
+
+    _stub_busy_latency
+    PATH="${BIN}:${PATH}" run --separate-stderr "${COPY_GATE}" 2.1
+    assert_failure 3
+    assert_output --partial 'not ok 1 real engine: bench.sh'
+    refute_output --partial '[ci] ERROR:'
+    refute_output --partial '[system-real]'
+    [[ "${stderr}" == *'[ci] ERROR: system-real bats failed'* ]]
+    [[ "${stderr}" == *'[system-real] stopping nested dockerd (pid 123)'* ]]
+    [[ "${stderr}" == *'未判定、請在閒置時重跑'* ]]
 }
 
 @test "control: a just test exiting 0 passes item 2.1" {

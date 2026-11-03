@@ -610,8 +610,16 @@ _item_2_1() (
     local _rc=0 _dir=""
     _make_tmpdir _dir || return 1
     trap 'rm -rf "${_dir}"' EXIT
-    verify_run "${GATE_TIMEOUT}" just test >"${_dir}/output" 2>&1 || _rc=$?
-    cat "${_dir}/output" || return 1
+    # The foreground pipe drains both tees before capture files are replayed.
+    # Keep a merged transcript for the stage-ordered latency evidence parser.
+    {
+        verify_run "${GATE_TIMEOUT}" just test \
+            2> >(tee "${_dir}/stderr") > >(tee "${_dir}/stdout") || _rc=$?
+        printf '%s\n' "${_rc}" >"${_dir}/status"
+    } | cat >"${_dir}/output" || return 1
+    read -r _rc <"${_dir}/status" || return 1
+    cat "${_dir}/stdout" || return 1
+    cat "${_dir}/stderr" >&2 || return 1
     if [[ "${_rc}" -eq 124 ]]; then
         _err "\`just test\` did not finish within ${GATE_TIMEOUT}s (timeout)"
         return 1
