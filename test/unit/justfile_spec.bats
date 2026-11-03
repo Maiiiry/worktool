@@ -510,6 +510,12 @@ EOF
     assert_line --regexp '^ +diagram .*args: ITEM, --root <repo>, --list, --realbox, --help'
 }
 
+@test "#720: just verify lists the realbox list option" {
+    _just --list verify
+    assert_success
+    assert_line --regexp '^ +realbox .*args: ITEM, --list, --allow-real-box'
+}
+
 @test "#513: bare just verify lists the realbox comment tag option" {
     _just verify
     assert_success
