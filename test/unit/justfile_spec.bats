@@ -929,5 +929,5 @@ EOF
 | `worktree` | `.agents/script/worktree/` | 列出動詞 | 無；各動詞用 `--help` | `'../../..'` |
 | `job` | `.agents/script/` | 列出動詞 | `help`（無 alias `h`） | `'../..'` |
 ROWS
-    [[ "${section}" != *'每個命名空間有自己的 `default` 與 `help`'* ]]
+    [[ "${section}" != *"每個命名空間有自己的 \`default\` 與 \`help\`"* ]]
 }

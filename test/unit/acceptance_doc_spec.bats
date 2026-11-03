@@ -472,9 +472,9 @@ _compare_52_doc() {
         while IFS= read -r name; do printf '%s | %s\n' "${name}" "${reason}"; done | sort)"
     [[ -n "${expected}" ]]
     section="$(sed -n '/^## 測試/,/^## CI/p' "${REPO_ROOT}/doc/structure.md")"
-    documented="$(sed -n 's/^| `\([^`]*\)` | `\([^`]*\)` |$/\1 | \2/p' <<<"${section}" | sort)"
+    documented="$(sed -n "s/^| \`\\([^\`]*\\)\` | \`\\([^\`]*\\)\` |\$/\\1 | \\2/p" <<<"${section}" | sort)"
     assert_equal "${documented}" "${expected}"
-    [[ "${section}" == *'未設 `WORKTOOL_STRESS=1`（未設定或值不是 `1`）時，unit 層只允許以下三個 CPU 負載重現案例'* ]]
+    [[ "${section}" == *"未設 \`WORKTOOL_STRESS=1\`（未設定或值不是 \`1\`）時，unit 層只允許以下三個 CPU 負載重現案例"* ]]
     [[ "${section}" == *'除此之外，每層都不得有任何 skip'* ]]
-    [[ "${section}" == *'設 `WORKTOOL_STRESS=1` 時，這三個案例也不得 skip'* ]]
+    [[ "${section}" == *"設 \`WORKTOOL_STRESS=1\` 時，這三個案例也不得 skip"* ]]
 }
