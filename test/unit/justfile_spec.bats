@@ -492,6 +492,12 @@ EOF
     assert_equal "$(_stub_calls)" ""
 }
 
+@test "#720: just box lists the bench max-wait option" {
+    _just --list box
+    assert_success
+    assert_line --regexp '^ +bench .*--max-wait N'
+}
+
 @test "#513: bare just verify lists the realbox comment tag option" {
     _just verify
     assert_success
