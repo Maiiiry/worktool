@@ -1014,3 +1014,12 @@ _copy_namespace_docs() {
     assert_success
     assert_output --partial '`matrix`'
 }
+
+@test "#726: README command table documents box bench metrics and options" {
+    run grep -E '^\| `just box bench ' "${REPO_ROOT}/README.md"
+    assert_success
+    assert_output --partial 'enter、shell、inbox'
+    assert_output --partial 'min / median / max'
+    assert_output --partial '--max-ms'
+    assert_output --partial '--max-wait'
+}
