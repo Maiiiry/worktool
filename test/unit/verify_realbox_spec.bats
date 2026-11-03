@@ -2432,7 +2432,15 @@ EOF
     _just="$(cat "${STATE}/real/just")"
     for _verb in assemble setup status; do
         _args=()
-        [[ "${_verb}" == status ]] || _args=(--dry-run)
+        case "${_verb}" in
+            assemble) _args=(--dry-run) ;;
+            setup) _args=(--dry-run --terminal ghostty --auto-enter yes --box dev) ;;
+            status)
+                # Status reads persisted choices; a setup dry-run cannot supply them.
+                run "${_just}" box setup --terminal ghostty --auto-enter yes --box dev
+                assert_success
+                ;;
+        esac
         run "${_just}" box "${_verb}" "${_args[@]}"
         assert_success
         _real="${output}"
