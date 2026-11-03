@@ -1413,3 +1413,15 @@ _degrade_setup_line() {
     assert_failure 1
     refute_output --partial 'malformed-refused=ghostty/config unchanged=yes'
 }
+
+@test "#713 diagnostics: refusal checks the setup recipe name and exit code" {
+    local item corruption
+    export VERIFY_CRITERION='error: Recipe'
+    for item in 3.5 3.10; do
+        for corruption in omit-line duplicate-line; do
+            _stub_just_setup_writing "${corruption}"
+            run "${VERIFY}" "${item}"
+            assert_failure 1
+        done
+    done
+}

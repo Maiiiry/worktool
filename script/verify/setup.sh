@@ -1095,6 +1095,18 @@ _require_no_distrobox_on_path() {
     fi
 }
 
+# Just versions vary in capitalization and recipe line numbers.
+_expect_setup_failure() {
+    local _line _count=0
+    local _pattern='^error: [Rr]ecipe `setup` failed on line [0-9]+ with exit code 1$'
+    while IFS= read -r _line; do
+        if [[ "${_line}" =~ ${_pattern} ]]; then _count=$((_count + 1)); fi
+    done <<<"${LAST_OUT}"
+    [[ "${_count}" -eq 1 ]] && return 0
+    _fail "$1: expected exactly one setup recipe diagnostic with exit code 1, found ${_count}"
+    return 1
+}
+
 _expect_refusal_lines() {
     _expect_lines 3.5 \
         '[INFO] auto-enter: yes (default)' \
@@ -1145,6 +1157,7 @@ _item_3_5() {
     _run_norm "${_env[@]}" just box setup || return 1
     _refuse_rc="${LAST_RC}"
     _expect_refusal_lines || _bad=1
+    _expect_setup_failure 3.5 || _bad=1
     printf 'rc=%s\n' "${_refuse_rc}"
     _files="$(_count_files "${ITEM_H}")" || return 1
     printf 'files %s->%s\n' "${_before}" "${_files}"
@@ -1574,6 +1587,7 @@ _item_3_10() {
     printf 'setup-rc=%s\n' "${LAST_RC}"
     [[ "${LAST_RC}" -eq 1 ]] || return 1
     _expect_atomic_setup failure || return 1
+    _expect_setup_failure 3.10 || return 1
     _count="$(_count_matching '^\[ERROR\]' "${ITEM_T}/run.out")" || return 1
     [[ "${_count}" -eq 1 ]] || return 1
     cmp -s "${_file}" "${ITEM_T}/original" || return 1
