@@ -387,6 +387,7 @@ _prepare_52_doc_tools() {
     _auto_window_tools
     cp "${STUBS}/just" "${STATE}/just"
     export DOC_ENTER="${REPO_ROOT}/script/box/enter.sh"
+    export FAKE_JUST_BOX_SCRIPT_DIR="${REPO_ROOT}/script/box"
     cat >"${STUBS}/just" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -421,10 +422,16 @@ _52_doc_stream() {
 
 _normalize_52_doc() {
     sed -E 's@[a-f0-9]{64}@<sha>@g;
-        s@/tmp/[^ ]+@<path>@g;
+        s@/(tmp|source)/[^ ]+@<path>@g;
         s/after [0-9]+s/after <elapsed>/g;
         s/pid=[0-9]+/pid=<pid>/g;
         s/mnt:\[[0-9]+\]/mnt:[<ns>]/g'
+}
+
+_normalize_52_doc_stderr() {
+    # Section 5.2 excerpts setup diagnostics, keeping the auto-enter source.
+    sed -E '/^\[INFO\] (terminal:|box:|ghostty config:|distrobox:|wrote:|Ghostty config changed:)/d' |
+        _normalize_52_doc
 }
 
 _assert_52_doc() {
@@ -443,8 +450,8 @@ _compare_52_doc() {
     assert_equal "$(printf '%s\n' "${output}" | _normalize_52_doc)" \
         "$(printf '%s\n' "${expected}" | _normalize_52_doc)" || return 1
     expected="$(_52_doc_stream "$1" stderr)"
-    assert_equal "$(printf '%s\n' "${stderr}" | _normalize_52_doc)" \
-        "$(printf '%s\n' "${expected}" | _normalize_52_doc)"
+    assert_equal "$(printf '%s\n' "${stderr}" | _normalize_52_doc_stderr)" \
+        "$(printf '%s\n' "${expected}" | _normalize_52_doc_stderr)"
 }
 
 @test "#691: acceptance 5.2 compares first-start stdout and stderr bidirectionally" {
@@ -477,4 +484,19 @@ _compare_52_doc() {
     [[ "${section}" == *'mntns 相等由 bats 案例保證'* ]]
     [[ "${section}" == *"\`gate.sh\` 只檢查 \`mntns=mnt:[數字]\` 格式與字面 \`== dev container\`"* ]]
     [[ "${section}" != *"\`mntns=\` 必須是盒子的 mount namespace"* ]]
+}
+
+@test "#724: structure documents exactly the runner unit CPU skip exemptions" {
+    local policy section reason expected documented
+    policy="$(sed -n '/^_has_unexpected_skip() {/,/^}/p' "${REPO_ROOT}/script/test/test.sh")"
+    reason="$(sed -n 's/.*reason = " \(.*\)"/\1/p' <<<"${policy}")"
+    expected="$(sed -n "s/.*\$0 == \"\([^\"]*\)\" reason.*/\1/p" <<<"${policy}" |
+        while IFS= read -r name; do printf '%s | %s\n' "${name}" "${reason}"; done | sort)"
+    [[ -n "${expected}" ]]
+    section="$(sed -n '/^## 測試/,/^## CI/p' "${REPO_ROOT}/doc/structure.md")"
+    documented="$(sed -n "s/^| \`\\([^\`]*\\)\` | \`\\([^\`]*\\)\` |\$/\\1 | \\2/p" <<<"${section}" | sort)"
+    assert_equal "${documented}" "${expected}"
+    [[ "${section}" == *"未設 \`WORKTOOL_STRESS=1\`（未設定或值不是 \`1\`）時，unit 層只允許以下三個 CPU 負載重現案例"* ]]
+    [[ "${section}" == *'除此之外，每層都不得有任何 skip'* ]]
+    [[ "${section}" == *"設 \`WORKTOOL_STRESS=1\` 時，這三個案例也不得 skip"* ]]
 }

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Event-driven supervisor for the real-machine 5.1 interrupt matrix.
+# Event-driven supervisor for the real-machine 5.4 interrupt matrix.
 _54_W=""
 _54_PID=""
 _54_REAP_RESULT=""
 _54_POLL_FD=""
+_54_KEEP_EVIDENCE=0
 
 _54_cleanup() {
     local rc=0 failed=0
@@ -25,7 +26,7 @@ _54_cleanup() {
         _54_PID=""
     fi
     if [[ -n "${_54_POLL_FD}" ]]; then exec {_54_POLL_FD}>&-; fi
-    if [[ -n "${_54_W}" ]]; then
+    if [[ -n "${_54_W}" && "${_54_KEEP_EVIDENCE}" -eq 0 ]]; then
         rm -rf -- "${_54_W}" || failed=1
     fi
     return "${failed}"
@@ -59,7 +60,10 @@ _54_keep_recovery() {
 _54_session_groups() {
     local file row status _parent group session rest
     for file in /proc/[0-9]*/stat; do
-        if ! IFS= read -r row 2>/dev/null <"${file}"; then continue; fi
+        if ! IFS= read -r row 2>/dev/null <"${file}"; then
+            [[ ! -d "${file%/stat}" ]] || return 1
+            continue
+        fi
         read -r status _parent group session rest <<<"${row##*) }"
         if [[ "${session}" == "$1" && "${status}" != Z && "${status}" != X ]]; then
             printf '%s\n' "${group}"
@@ -82,6 +86,9 @@ _54_stop_session() {
         verify_stop_group "${group}" TERM || rc=1
     done <"${_54_W}/groups"
     verify_stop_group "$1" TERM || rc=1
+    # A failed signal may report success upstream; confirm the owned session.
+    _54_session_groups "$1" >"${_54_W}/groups" || return 1
+    [[ ! -s "${_54_W}/groups" ]] || rc=1
     return "${rc}"
 }
 
@@ -123,14 +130,15 @@ _54_event() {
 }
 
 _54_assert() {
-    local capture="$1" dir="$2" rc="$3" expected="$4" check gone=0
+    local capture="$1" dir="$2" rc="$3" expected="$4" check gone=0 negative_rc=0
     [[ "${rc}" -eq "${expected}" ]] || return 1
     for check in 'cleanup-rc=0' 'box-state after-cleanup: home=0 tmux=0' \
         'host-state after-cleanup: new=0'; do
         grep -qFx "${check}" "${capture}" || return 1
     done
     # Do not accept a success line followed by a failed cleanup report.
-    if grep -qE '^cleanup-rc=[1-9]|^posted=' "${capture}"; then return 1; fi
+    grep -qE '^cleanup-rc=[1-9]|^posted=' "${capture}" || negative_rc=$?
+    [[ "${negative_rc}" -eq 1 ]] || return 1
     guard_box_exists "${BOX}" "${TIMEOUT_SHORT}" || gone=$?
     [[ "${gone}" -eq 1 ]] || return 1
     local -a homes=("${dir}"/wt-m3-51.*)
@@ -290,7 +298,7 @@ _54_finish_cell() {
         if _54_stop_session "${_54_PID}"; then
             _54_PID=""
         else
-            log_error "interrupt ${phase} ${signal}: failed to stop owned session (pid=${_54_PID}); retaining PID for cleanup"
+            log_error "interrupt ${phase} ${signal}: failed to stop owned session (pid=${_54_PID}); will retry during cleanup"
         fi
         _54_failure_report "${phase}" "${signal}" "${child_rc}" "${dir}"
         return 1
@@ -334,6 +342,7 @@ _54_cell() {
 }
 
 item_54() {
+    _54_KEEP_EVIDENCE=0
     guard_require setsid env bash distrobox just gh grep cmp mktemp mkdir rm mkfifo || return $?
     _54_W="$(mktemp -d "${TMPDIR:-/tmp}/wt-m3-54.XXXXXXXX")" || return 1
     _cleanup_push 54
@@ -360,16 +369,12 @@ item_54() {
             printf 'interrupt-matrix: INCONCLUSIVE (host too busy, re-run when idle)\n'
         fi
     else
-        # Retry a failed cell stop before dropping its cleanup token.
-        # Keep failed evidence and any surviving owned HOME for inspection.
-        if [[ -n "${_54_PID}" ]]; then
-            if _54_stop_session "${_54_PID}"; then
-                _54_PID=""
-            else
-                log_error "interrupt cleanup: failed to stop owned session (pid=${_54_PID}); inspect ${_54_W} and stop it manually"
-            fi
+        # EXIT cleanup retries surviving sessions and records failed recovery.
+        # Keep failed evidence even when the retry stops all owned processes.
+        _54_KEEP_EVIDENCE=1
+        if [[ -z "${_54_PID}" ]]; then
+            _cleanup_drop
         fi
-        _cleanup_drop
         printf 'interrupt-matrix: FAIL\n'
     fi
     return "${rc}"

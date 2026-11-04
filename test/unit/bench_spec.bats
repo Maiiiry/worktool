@@ -46,7 +46,7 @@
 #     seconds (one poll a second); not within --max-wait seconds (default
 #     60, 120 when CI is set) -> exit 3 "host too busy to measure
 #     (inconclusive)", distrobox never called, nothing on stdout. PSI is
-#     read again and recorded (one stderr line each) before and after
+#     read again and recorded (one stderr line per readable source) before and after
 #     every run, a failed run included; one reading above the limit
 #     (exact at any precision: 2.001 is above 2.00) voids the whole batch
 #     -> exit 3, no metric line, even when that run also failed. No readable PSI ->
@@ -689,9 +689,16 @@ teardown() {
 # --- the tool owns its CLI: --help and unknown / invalid options --------------
 
 @test "--help exits 0, names every option and the three metrics, and calls distrobox nothing" {
-    run "${BENCH}" --help
+    local _out="${TMP}/out" _err="${TMP}/err"
+    run bash -c '"$1" --help >"$2" 2>"$3"' _ "${BENCH}" "${_out}" "${_err}"
     assert_success
+    assert_equal "$(cat "${_out}")" ""
+    run cat "${_err}"
     assert_output --partial "Usage: bench.sh"
+    assert_output --partial "Quiet host:"
+    assert_output --partial "Exit codes:"
+    assert_output --partial "Environment (tests only):"
+    assert_output --partial "BENCH_CLOCK"
     local _opt
     for _opt in --box --runs --warmup --max-ms --json --shell --help; do
         assert_output --partial "${_opt}"
@@ -1052,6 +1059,26 @@ _busy_re() {
     run env FAKE_DBX_PSI_AT=1 FAKE_DBX_PSI_VALUE=garbage "${BENCH}" --runs 1 --warmup 0
     assert_failure 3
     assert_line --regexp "^\[ERROR\] host too busy mid-run \(inconclusive\): ${BENCH_PSI_FILE//./\\.} some avg10=\? after enter run 1; loadavg=[^;]+; batch void, re-run when idle$"
+}
+
+@test "an unreadable bench PSI retains its diagnostic source when the box becomes busy" {
+    local _box="${TMP}/box.pressure"
+    _psi 0.00 "${_box}"
+    mv "${MOCKBIN}/distrobox" "${MOCKBIN}/distrobox-original"
+    cat >"${MOCKBIN}/distrobox" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+"${0%/*}/distrobox-original" "$@"
+printf 'garbage\n' >"${BENCH_PSI_FILE}"
+EOF
+    chmod +x "${MOCKBIN}/distrobox"
+    run env BENCH_BOX_PSI_FILE="${_box}" \
+        FAKE_DBX_PSI_FILE="${_box}" FAKE_DBX_PSI_AT=1 FAKE_DBX_PSI_VALUE=7.25 \
+        "${BENCH}" --runs 1 --warmup 0
+    assert_failure 3
+    assert_line "[INFO] psi after enter run 1: ${_box} some avg10=7.25"
+    assert_line --regexp "^\[ERROR\] host too busy mid-run \(inconclusive\): ${BENCH_PSI_FILE//./\\.} some avg10=\? after enter run 1; loadavg=[^;]+; batch void, re-run when idle$"
+    refute_output --regexp '^(enter|shell|inbox): min='
 }
 
 @test "no readable PSI: a warning says so and the measurement runs unguarded (exit 0, no wait)" {
