@@ -1241,14 +1241,19 @@ _setup_acceptance_control() {
     assert_success
 }
 
-# Every other registered item must remain green on the same degraded copy.
+# Every registered item outside the exclusion list must remain green on the same degraded copy.
 _setup_acceptance_others() {
-    local _repo="$1" _except="$2" _item _rest=()
+    local _repo="$1" _except _item _rest=()
+    shift
     output=""
     run just --justfile "${_repo}/justfile" verify setup --list
     assert_success
     while read -r _item _; do
-        [[ "${_item}" == 3.* && "${_item}" != "${_except}" ]] && _rest+=("${_item}")
+        [[ "${_item}" == 3.* ]] || continue
+        for _except in "$@"; do
+            [[ "${_item}" == "${_except}" ]] && continue 2
+        done
+        _rest+=("${_item}")
     done <<<"${output}"
     run just --justfile "${_repo}/justfile" verify setup "${_rest[@]}"
     assert_success
@@ -1327,7 +1332,12 @@ _degrade_setup_line() {
     run just --justfile "${_repo}/justfile" verify setup 3.13
     assert_failure 1
     refute_output --partial '3.13 PASS'
-    _setup_acceptance_others "${_repo}" 3.13
+    # The shared unchanged diagnostic is also required by the 3.10 rerun criterion.
+    run just --justfile "${_repo}/justfile" verify setup 3.10
+    assert_failure 1
+    refute_output --partial '3.10 PASS'
+    assert_line "[FAIL] 3.10: expected exactly one line equal to '[INFO] unchanged: <H>/.config/distrobox/distrobox.conf (managed block already up to date)', found 0"
+    _setup_acceptance_others "${_repo}" 3.13 3.10
 }
 
 @test "#713 3.7: missing distrobox is unavailable through just" {
