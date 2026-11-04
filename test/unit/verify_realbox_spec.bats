@@ -4339,6 +4339,66 @@ STUB
     [ ! -d "$(cat "${STATE}/closed-directory")" ]
 }
 
+_712_gone_before_cleanup_tools() {
+    _712_session_tools
+    cp "${STUBS}/readlink" "${STATE}/confirmed-readlink"
+    cat >"${STUBS}/readlink" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == /proc/4242/ns/mnt ]]; then
+    touch "${FAKE_STATE_DIR}/window-confirmed"
+fi
+exec "${FAKE_STATE_DIR}/confirmed-readlink" "$@"
+STUB
+    cp "${STUBS}/ps" "${STATE}/first-cleanup-ps"
+    cat >"${STUBS}/ps" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == '-e -o pid=,ppid=,comm=' && -f "${FAKE_STATE_DIR}/window-confirmed" ]]; then
+    if [[ -f "${FAKE_STATE_DIR}/window-directory" ]]; then
+        cp "${FAKE_STATE_DIR}/window-directory" "${FAKE_STATE_DIR}/closed-directory"
+        rm "${FAKE_STATE_DIR}/window-directory"
+    fi
+    printf '1 0 init\n900 1 ghostty\n4241 1 worker\n'
+    exit 0
+fi
+exec "${FAKE_STATE_DIR}/first-cleanup-ps" "$@"
+STUB
+}
+
+@test "#712: G confirmed root absent from first cleanup snapshot with live members keeps evidence" {
+    _712_gone_before_cleanup_tools
+    FAKE_SESSION_CHECK=group run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+    assert_failure 1
+    [[ "${stderr}" == *'owned window session 4240 still has live members'* ]]
+    local directory
+    directory="$(cat "${STATE}/closed-directory")"
+    [ -f "${directory}/before" ]
+    _assert_52_kept_evidence_stderr "${directory}"
+    assert_equal "$(cat "${STATE}/closed")" $'-HUP -- -4240\n-TERM -- -4240\n-KILL -- -4240'
+}
+
+@test "#712: H confirmed root absent from first cleanup snapshot with empty session removes directory" {
+    _712_gone_before_cleanup_tools
+    run "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+    assert_success
+    [ -f "${STATE}/window-confirmed" ]
+    [ ! -d "$(cat "${STATE}/closed-directory")" ]
+    [ ! -f "${STATE}/closed" ]
+}
+
+@test "#712: I confirmed root absent from first cleanup snapshot with failed session probe keeps evidence" {
+    _712_gone_before_cleanup_tools
+    FAKE_SESSION_CHECK=failure run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+    assert_failure 1
+    [[ "${stderr}" == *'cannot determine owned window session 4240'* ]]
+    local directory
+    directory="$(cat "${STATE}/closed-directory")"
+    [ -f "${directory}/before" ]
+    _assert_52_kept_evidence_stderr "${directory}"
+    [ ! -f "${STATE}/closed" ]
+}
+
 @test "#663: a non-fish wrapper seen once keeps its deadline probe after later sweeps lose it" {
     _auto_window_tools
     # The deadline must expire between sweeps, not inside an ownership probe.
