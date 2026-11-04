@@ -1138,8 +1138,8 @@ _52_close_window() {
     [[ "${scanned}" -eq 1 ]] || { _52_keep_window; return 1; }
     if [[ "${rc}" -eq 2 && -n "${_52_WINDOW_ROOT:-}" ]]; then
         _52_stop_window "${_52_WINDOW_ROOT}" || { _52_keep_window; return 1; }
+        (( SECONDS < _52_DEADLINE )) || { _52_keep_window; return 1; }
     fi
-    (( SECONDS < _52_DEADLINE )) || { _52_keep_window; return 1; }
     rm -rf -- "${_52_WINDOW_DIR}" || return 1
     _52_WINDOW_DIR=''
 }
