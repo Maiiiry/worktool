@@ -994,3 +994,49 @@ _copy_namespace_docs() {
         fi
     done
 }
+
+@test "#726: README and root header describe six namespaces and only bare test runs all" {
+    run grep -F "裸 \`just\` 列出六個 namespaces(\`test\`、\`box\`、\`verify\`、\`agent\`、\`worktree\`、\`job\`)" "${REPO_ROOT}/README.md"
+    assert_success
+    run grep -F "只有裸 \`just test\` 跑全部測試,其他 namespace 的裸指令只列清單" "${REPO_ROOT}/README.md"
+    assert_success
+    run grep -F 'test, box, verify, agent, worktree, job' "${REPO_ROOT}/justfile"
+    assert_success
+    run grep -F "Only bare \`just test\` runs everything CI runs; other bare namespaces list" "${REPO_ROOT}/justfile"
+    assert_success
+}
+
+@test "#726: README command table includes matrix in all tests and tier selection" {
+    run grep -E "^\| \`just test\` \|" "${REPO_ROOT}/README.md"
+    assert_success
+    assert_output --partial 'lint、unit、matrix、integration、system、acceptance、system-real'
+    run grep -E "^\| \`just test unit\`" "${REPO_ROOT}/README.md"
+    assert_success
+    assert_output --partial "\`matrix\`"
+}
+
+@test "#726: README command table documents box bench metrics and options" {
+    run grep -E "^\| \`just box bench " "${REPO_ROOT}/README.md"
+    assert_success
+    assert_output --partial 'enter、shell、inbox'
+    assert_output --partial 'min / median / max'
+    assert_output --partial '--max-ms'
+    assert_output --partial '--max-wait'
+    assert_output --partial '預設 60'
+    assert_output --partial "\`CI\` 時 120"
+}
+
+@test "#726: README command table distinguishes verify listing, all and opt-in realbox" {
+    run grep -E "^\| \`just verify\`" "${REPO_ROOT}/README.md"
+    assert_success
+    assert_output --partial '只列清單'
+    run grep -E "^\| \`just verify all" "${REPO_ROOT}/README.md"
+    assert_success
+    assert_output --partial '非實機'
+    run grep -E "^\| \`just verify <" "${REPO_ROOT}/README.md"
+    assert_success
+    assert_output --partial 'ui、gate、setup、diagram、evidence'
+    run grep -E "^\| \`just verify realbox" "${REPO_ROOT}/README.md"
+    assert_success
+    assert_output --partial '--allow-real-box'
+}
