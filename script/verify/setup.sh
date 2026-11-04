@@ -157,10 +157,7 @@ DISTROBOX_LINES_SEEN=() # 3.6: the `distrobox:` line each case actually got
 MANAGED_CMD="command = '<repo>/script/box/enter.sh' --distrobox '<D>' --box 'dev'"
 
 # Pin the isolation body independently of the product.
-ISOLATION_BODY="$(cat <<'EOF'
-_worktool_n=; _worktool_v=; for _worktool_a in "$@"; do if [ -n "${_worktool_v}" ]; then [ "${_worktool_v}" = n ] && [ -n "${_worktool_a}" ] && _worktool_n="${_worktool_a}"; _worktool_v=; continue; fi; case "${_worktool_a}" in --|-e|--exec) break ;; -n|--name) _worktool_v=n ;; -a|--additional-flags) _worktool_v=a ;; -*) ;; *) _worktool_n="${_worktool_a}" ;; esac; done; [ "${_worktool_n:-${DBX_CONTAINER_NAME:-}}" != 'dev' ] || unset TMUX TMUX_PANE; unset _worktool_a _worktool_n _worktool_v
-EOF
-)"
+ISOLATION_BODY="_worktool_n=; _worktool_v=; for _worktool_a in \"\$@\"; do if [ -n \"\${_worktool_v}\" ]; then [ \"\${_worktool_v}\" = n ] && [ -n \"\${_worktool_a}\" ] && _worktool_n=\"\${_worktool_a}\"; _worktool_v=; continue; fi; case \"\${_worktool_a}\" in --|-e|--exec) break ;; -n|--name) _worktool_v=n ;; -a|--additional-flags) _worktool_v=a ;; -*) ;; *) _worktool_n=\"\${_worktool_a}\" ;; esac; done; [ \"\${_worktool_n:-\${DBX_CONTAINER_NAME:-}}\" != 'dev' ] || unset TMUX TMUX_PANE; unset _worktool_a _worktool_n _worktool_v"
 
 # The line `_apply_no_terminal` logs instead of writing a profile (item
 # 3.8). The BARE `distrobox` in it is deliberate and is pinned here as
