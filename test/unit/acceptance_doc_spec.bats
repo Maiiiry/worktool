@@ -511,3 +511,15 @@ _compare_52_doc() {
     [[ "${section}" == *'除此之外，每層都不得有任何 skip'* ]]
     [[ "${section}" == *"設 \`WORKTOOL_STRESS=1\` 時，這三個案例也不得 skip"* ]]
 }
+
+@test "#712: window deadlines distinguish scanning, evidence probes and session cleanup" {
+    local doc
+    doc="$(cat "${REPO_ROOT}/doc/acceptance.md")"
+    [[ "${doc}" == *'快照與所有權掃描的 10 秒搜尋預算'* ]]
+    [[ "${doc}" == *'TIMEOUT_SHORT=180 秒，TERM 後最多再等 10 秒才 KILL'* ]]
+    [[ "${doc}" == *'收尾掃描與升級的等待上限為 15 秒'* ]]
+    [[ "${doc}" == *'套用模式的例外：到期時若先前已記錄非 fish 候選'* ]]
+    [[ "${doc}" == *'確認 session 的 PGID／SID 已無存活成員後才移除目錄'* ]]
+    [[ "${doc}" == *'成員仍存活或 session 檢查無法判定時，保留目錄並回非零'* ]]
+    [[ "${doc}" != *'最後一次外部探測最多 1 秒，因此總上限為 5 秒'* ]]
+}
