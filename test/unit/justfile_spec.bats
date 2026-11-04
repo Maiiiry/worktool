@@ -1022,6 +1022,8 @@ _copy_namespace_docs() {
     assert_output --partial 'min / median / max'
     assert_output --partial '--max-ms'
     assert_output --partial '--max-wait'
+    assert_output --partial '預設 60'
+    assert_output --partial "\`CI\` 時 120"
 }
 
 @test "#726: README command table distinguishes verify listing, all and opt-in realbox" {
