@@ -16,6 +16,26 @@ setup() {
     cfgbk_paths
 }
 
+@test "#723: a non-init-log ancestor that is not a directory reports its path generically" {
+    printf 'not a directory\n' >"${HOME}/blocked"
+    cfgbk_dir_create
+
+    run --separate-stderr bash -s -- "${REPO_ROOT}" <<'BASH'
+        set -euo pipefail
+        source "$1/lib/guard.sh"
+        source "$1/script/verify/config_backup_paths.sh"
+        BOX=dev
+        export XDG_CONFIG_HOME="${HOME}/blocked/missing"
+        cfgbk_paths
+        cfgbk_backup_body
+BASH
+
+    assert_failure 1
+    assert_output ''
+    assert_equal "${stderr}" "[FAIL] config ancestor is not a directory: ${HOME}/blocked"
+    assert [ ! -e "${CFGBK_B}/manifest" ]
+}
+
 @test "#576: leftover directory report skips other manifest states under errexit" {
     cfgbk_dir_create
     printf 'ghostty=absent-file\nworktool=absent-dir\n' >"${CFGBK_B}/manifest"
