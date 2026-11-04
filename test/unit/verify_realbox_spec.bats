@@ -4280,6 +4280,7 @@ STUB
     _712_session_tools
     local mode directory
     for mode in group session; do
+        rm -f "${STATE}/closed"
         FAKE_SESSION_CHECK="${mode}" run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
         assert_failure 1
         [[ "${stderr}" == *'owned window session 4240 still has live members'* ]]
