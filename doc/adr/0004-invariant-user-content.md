@@ -34,7 +34,7 @@ worktool 的核心承諾是重建（#200 定案 2、3）：換機、重灌、升
 
 `just box setup`（`script/box/setup.sh`）在 ghostty config 與 distrobox.conf 各維護一個受管區塊，標記行定義在 `lib/enter.sh`（`ENTER_BLOCK_BEGIN`／`ENTER_BLOCK_END`），寫入或移除前先以 `enter_block_check` 檢查標記；多個區塊或其他不完整標記一律拒絕，任何檔案都不寫。合法檔案寫入走 `enter_block_compose`（取代唯一區塊並維持原位；沒有區塊時附加在檔尾），移除走 `enter_block_strip`（只剝除受管區塊）。它也透過 `config_set` 原地更新 worktool 自己的狀態檔 `~/.config/worktool/config` 的狀態鍵，保留不屬於自己的行。
 
-`just box assemble`（`script/box/assemble.sh`）在 distrobox 建好盒子後，透過 `lib/home.sh` 的 `home_record` 把盒子 HOME 記進同一個狀態檔 `~/.config/worktool/config`：只移除舊的 `home=`／`home.source=` 兩行、把新的一對附加在檔尾，其他每一行原樣留下、順序不變；先寫同目錄暫存檔再改名取代；試跑與 distrobox 失敗時不寫。
+`just box assemble`（`script/box/assemble.sh`）在 distrobox 建好盒子後，透過 `lib/home.sh` 的 `home_record` 把盒子 HOME 記進同一個狀態檔 `~/.config/worktool/config`：由 `config_set` 在原位更新 `home=`／`home.source=`，移除重複的鍵行，缺少的鍵才附加在檔尾，其他每一行原樣留下、順序不變；先寫同目錄暫存檔再改名取代；試跑與 distrobox 失敗時不寫。
 
 這些 spec 都把 `HOME` 指到測試暫存目錄，不碰真正的 HOME。
 
@@ -61,6 +61,6 @@ user config 已由 #199／PR #228 交付：`just box assemble` 以 symlink 從 h
 
 - 要改先問：待補。目前沒有詢問流程；受管區塊以外會被改動的只有狀態檔的狀態鍵（依上面的例外不需詢問），以及下面待補的情形。之後任何功能需要改既有內容時，要先有詢問機制與測試。
 - 使用者寫在受管區塊標記之間的行：待補。標記行寫著 do not edit，改寫時區塊內的內容整段換掉；使用者若違反標記在區塊內寫東西，會被覆蓋，目前沒有偵測也沒有測試。
-- profile 或狀態檔是 symlink 時：待補。`setup.sh` 的 `_write_atomic` 與 `home_record` 都先寫暫存檔再改名取代目標；依程式碼，目標若是 symlink，改寫後 symlink 本身會被換成一般檔，連結目標不變但連結消失。目前沒有測試。
+- profile 或狀態檔是 symlink 時：待補。`setup.sh` 以 `config_write_atomic` 寫入 ghostty config／distrobox.conf、以 `config_set` 寫入狀態鍵，`home_record` 也使用 `config_set`；兩者都透過 `lib/config.sh` 的 `_config_replace` 先寫同目錄暫存檔再改名取代目標；依程式碼，目標若是 symlink，改寫後 symlink 本身會被換成一般檔，連結目標不變但連結消失。目前沒有測試。
 - 盒子 HOME 目錄（`just box assemble --home`）裡使用者已有的檔案不被刪除或覆蓋：待補，目前沒有測試。
 - 全 repo 層級的守門（例如禁止腳本刪除 HOME 底下非 worktool 建立的檔案）：待補。

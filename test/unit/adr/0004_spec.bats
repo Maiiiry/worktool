@@ -76,6 +76,15 @@ _contract_promise_1() {
     assert_output --regexp "test/[a-z]+/assemble_spec\.bats"
 }
 
+@test "#728: ADR 0004 describes home_record as an in-place config_set update and cites config_write_atomic" {
+    run cat "${ADR_0004}"
+    assert_success
+    refute_output --partial "把新的一對附加在檔尾"
+    assert_output --partial "config_set"
+    assert_output --partial "config_write_atomic"
+    refute_output --partial "\`_write_atomic\`"
+}
+
 @test "doc/contract.md invariant index entry 1 links this ADR (issue #202 backfill)" {
     assert [ -f "${REPO_ROOT}/doc/adr/0004-invariant-user-content.md" ]
     assert [ -f "${REPO_ROOT}/doc/contract.md" ]
