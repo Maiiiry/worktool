@@ -4130,7 +4130,7 @@ STUB
     chmod +x "${STUBS}/sleep"
 }
 
-@test "#663: late sweep escalation shares the documented five-second bound" {
+@test "#663: late sweep escalation respects the shared four-second deadline" {
     _auto_window_tools
     local delay=0
     if [[ "${WORKTOOL_STRESS:-}" == 1 ]]; then delay=3.2; fi

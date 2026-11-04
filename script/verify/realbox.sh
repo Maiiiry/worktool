@@ -1121,8 +1121,8 @@ _52_sweep_window() {
 
 _52_close_window() {
     [[ -n "${_52_WINDOW_DIR:-}" ]] || return 0
-    # Start retries only while a full second remains, so a retry sweep is
-    # never cut off by the deadline mid-snapshot.
+    # Stop starting retries one second before the shared deadline. A sweep
+    # interrupted by that deadline, even mid-snapshot, returns 1 and keeps evidence.
     local _52_DEADLINE=$((SECONDS + 4)) rc scanned=0 retry_until=$((SECONDS + 3))
     while (( SECONDS < retry_until )); do
         rc=0
