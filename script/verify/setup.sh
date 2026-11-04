@@ -10,6 +10,7 @@
 # Items 3.1-3.6 cover dry-run, direct entry, disable, refusal, explicit
 # distrobox and the status states. 3.7 checks distrobox.conf isolation;
 # 3.8 checks terminal none; 3.9 checks config.ghostty migration.
+# 3.10-3.13 check atomic failure, modes, dry-run removal and idempotence.
 #
 # Every item runs against a THROWAWAY HOME under its own mktemp directory,
 # so the maintainer's real configuration is never read or written, and the
@@ -154,6 +155,9 @@ DISTROBOX_LINES_SEEN=() # 3.6: the `distrobox:` line each case actually got
 # Pin the acceptance command independently of the product under test.
 # The real setup dry-run guard detects drift without redefining this criterion.
 MANAGED_CMD="command = '<repo>/script/box/enter.sh' --distrobox '<D>' --box 'dev'"
+
+# Pin the isolation body independently of the product.
+ISOLATION_BODY="_worktool_n=; _worktool_v=; for _worktool_a in \"\$@\"; do if [ -n \"\${_worktool_v}\" ]; then [ \"\${_worktool_v}\" = n ] && [ -n \"\${_worktool_a}\" ] && _worktool_n=\"\${_worktool_a}\"; _worktool_v=; continue; fi; case \"\${_worktool_a}\" in --|-e|--exec) break ;; -n|--name) _worktool_v=n ;; -a|--additional-flags) _worktool_v=a ;; -*) ;; *) _worktool_n=\"\${_worktool_a}\" ;; esac; done; [ \"\${_worktool_n:-\${DBX_CONTAINER_NAME:-}}\" != 'dev' ] || unset TMUX TMUX_PANE; unset _worktool_a _worktool_n _worktool_v"
 
 # The line `_apply_no_terminal` logs instead of writing a profile (item
 # 3.8). The BARE `distrobox` in it is deliberate and is pinned here as
@@ -558,12 +562,15 @@ _seed_user_content() {
 # accepted here, and a stripper that empties the file would otherwise get to
 # report that the file was empty all along.
 _user_lines_of() {
-    local _file="$1" _line _skip=0
+    local _file="$1" _line _skip=0 _newline
     [[ -f "${_file}" && -r "${_file}" ]] || {
         _fail "cannot read ${_file} to check the user content survived"
         return 1
     }
-    while IFS= read -r _line || [[ -n "${_line}" ]]; do
+    while :; do
+        _newline=1
+        IFS= read -r _line || _newline=0
+        [[ "${_newline}" -eq 1 || -n "${_line}" ]] || break
         if [[ "${_line}" == "${VERIFY_BLOCK_BEGIN}" ]]; then
             _skip=1
             continue
@@ -573,7 +580,8 @@ _user_lines_of() {
             continue
         fi
         [[ "${_skip}" -eq 1 ]] && continue
-        printf '%s\n' "${_line}"
+        printf '%s' "${_line}"
+        if [[ "${_newline}" -eq 1 ]]; then printf '\n'; fi
     done <"${_file}"
     return 0
 }
@@ -586,9 +594,11 @@ _check_user_content() {
     local _item="$1" _when="$2" _label="$3" _file="$4"
     shift 4
     local _want _got
-    _want="$(printf '%s\n' "$@")"
+    # A sentinel preserves every trailing newline through command substitution.
+    _want="$(printf '%s\n' "$@"; printf '.')"
     USER_CONTENT_STATE="UNREADABLE"
-    _got="$(_user_lines_of "${_file}")" || return 1
+    _got="$(_user_lines_of "${_file}" || exit 1; printf '.')" || return 1
+    _want="${_want%.}" _got="${_got%.}"
     if [[ "${_got}" == "${_want}" ]]; then
         USER_CONTENT_STATE="intact"
         return 0
@@ -775,8 +785,10 @@ _item_3_1() {
         '[INFO] terminal: ghostty (default)' \
         '[INFO] terminal detected: ghostty (ghostty executable <G>)' \
         '[INFO] box: dev (default)' \
+        '[INFO] ghostty config: <H>/.config/ghostty/config (config.ghostty absent; legacy fallback)' \
         '[INFO] distrobox: <D> (absolute path written into the managed command)' \
         '[INFO] dry-run: would write <H>/.config/worktool/config' \
+        "[INFO] dry-run: would write <H>/.config/distrobox/distrobox.conf (managed block: ${ISOLATION_BODY})" \
         "[INFO] dry-run: would write <H>/.config/ghostty/config (managed block: ${MANAGED_CMD})" \
         || _bad=1
     printf 'rc=%s\n' "${LAST_RC}"
@@ -839,8 +851,8 @@ _item_3_2() {
     fi
 
     _run_norm "${_env[@]}" just box status || return 1
-    # The document publishes the whole eight-line report, including the last
-    # line's verdict on whether the recorded distrobox still runs.
+    # Pin the documented status fields, including whether the recorded
+    # distrobox still runs; status also reports its recorded wrapper.
     _expect_lines 3.2 \
         'config: <H>/.config/worktool/config' \
         'auto-enter: yes (default)' \
@@ -902,43 +914,11 @@ _item_3_2() {
 # --- 3.3 ---------------------------------------------------------------------
 # Back to the host shell: setup first (its output is the 3.2 one and is not
 # repeated), then --auto-enter no, which removes the block and reports each
-# removal. Afterwards zero managed blocks are left.
-_item_3_3() {
-    _require_tools env just sed grep mktemp || return $?
-    _item_begin || return 1
-    local _g _d _blocks _before _remove_rc _bad=0
-    _g="$(_resolve_exec ghostty 'setup resolves it to log how the terminal default was decided')" || return $?
-    _d="$(_resolve_exec distrobox 'setup writes its absolute path into the managed command')" || return $?
-    NORM_G="${_g}"
-    NORM_D="${_d}"
-    # Removal is where overwriting is most tempting and most destructive:
-    # "the block is gone" is also true of a config that was truncated.
-    _seed_user_content 3.3 || return 1
-
-    local _env=(env "HOME=${ITEM_H}" "XDG_CONFIG_HOME=${ITEM_H}/.config")
-    # The removal case has nothing to remove unless the first run wrote a
-    # block, so the precondition is checked, not assumed.
-    "${_env[@]}" just box setup >/dev/null 2>&1 || {
-        _fail "3.3: the first (default) just box setup failed, so there is no managed block to remove"
-        return 1
-    }
-    _expect_user_content 3.3 after-write || _bad=1
-    # "The block was removed" is vacuously true of a config that never had
-    # one, so the precondition is MEASURED and printed before the removal
-    # runs: without this line, a setup that silently stopped writing the
-    # block would satisfy `blocks=0` exactly as a working removal does.
-    _before="$(_count_matching 'BEGIN worktool managed block' "${ITEM_H}/.config/ghostty/config")" || return 1
-    printf 'blocks-before=%s\n' "${_before}"
-    if [[ "${_before}" -ne 1 ]]; then
-        _fail "3.3: the ghostty config held ${_before} managed block(s) before the removal, expected 1; 'the block is gone' proves nothing about a block that was never there"
-        _bad=1
-    fi
-
-    _run_norm "${_env[@]}" just box setup --auto-enter no || return 1
+# removal. Afterwards no Ghostty block remains; distrobox isolation stays.
+_check_disable_sequence() {
+    local _remove_rc _blocks _bad=0
+    _run_norm "$@" just box setup --auto-enter no || return 1
     _remove_rc="${LAST_RC}"
-    # Every removal is reported by name, and the removed block is named with
-    # the command it held; the tmux.conf line is the "there was nothing to
-    # undo" half of the same report.
     _expect_lines 3.3 \
         '[INFO] auto-enter: no (user)' \
         '[INFO] terminal: ghostty (default)' \
@@ -947,23 +927,18 @@ _item_3_3() {
         '[INFO] wrote: <H>/.config/worktool/config' \
         "[INFO] removed: <H>/.config/ghostty/config (managed block: ${MANAGED_CMD})" \
         || _bad=1
-    # Removing needs no distrobox, so the document shows no `distrobox:`
-    # decision line here. An implementation that resolved one anyway would
-    # be doing work it must not need.
     _refute_line 3.3 '[INFO] distrobox:' || _bad=1
+    _refute_line 3.3 '[INFO] tmux:' || _bad=1
+    _refute_line 3.3 '.tmux.conf' || _bad=1
     printf 'rc=%s\n' "${_remove_rc}"
-
     _blocks="$(_count_matching 'BEGIN worktool managed block' "${ITEM_H}/.config/ghostty/config")" || return 1
     printf 'blocks=%s\n' "${_blocks}"
-    _run_norm "${_env[@]}" just box status || return 1
+    _run_norm "$@" just box status || return 1
     _expect_lines 3.3 \
         'distrobox.conf: <H>/.config/distrobox/distrobox.conf (managed block: present)' \
         'ghostty: <H>/.config/ghostty/config (managed block: absent)' || _bad=1
     [[ "${LAST_RC}" -eq 0 ]] || _bad=1
-    # `blocks=0` is equally true of a config the removal emptied, so the
-    # user's own lines are counted again on the far side of the removal.
     _expect_user_content 3.3 after-removal || _bad=1
-
     if [[ "${_remove_rc}" -ne 0 ]]; then
         _fail "3.3: just box setup --auto-enter no exited ${_remove_rc}, expected 0"
         _bad=1
@@ -975,21 +950,94 @@ _item_3_3() {
     return "${_bad}"
 }
 
+_item_3_3() {
+    _require_tools env just sed grep mktemp || return $?
+    _item_begin || return 1
+    local _g _d _before _bad=0
+    _g="$(_resolve_exec ghostty 'setup resolves it to log how the terminal default was decided')" || return $?
+    _d="$(_resolve_exec distrobox 'setup writes its absolute path into the managed command')" || return $?
+    NORM_G="${_g}"
+    NORM_D="${_d}"
+    _seed_user_content 3.3 || return 1
+    local _env=(env "HOME=${ITEM_H}" "XDG_CONFIG_HOME=${ITEM_H}/.config")
+    "${_env[@]}" just box setup >/dev/null 2>&1 || {
+        _fail "3.3: the first (default) just box setup failed, so there is no managed block to remove"
+        return 1
+    }
+    _expect_user_content 3.3 after-write || _bad=1
+    _before="$(_count_matching 'BEGIN worktool managed block' "${ITEM_H}/.config/ghostty/config")" || return 1
+    printf 'blocks-before=%s\n' "${_before}"
+    if [[ "${_before}" -ne 1 ]]; then
+        _fail "3.3: the ghostty config held ${_before} managed block(s) before the removal, expected 1; 'the block is gone' proves nothing about a block that was never there"
+        _bad=1
+    fi
+    _check_disable_sequence "${_env[@]}" || _bad=1
+    return "${_bad}"
+}
+
 # --- 3.4 ---------------------------------------------------------------------
 # Bad input is refused by the script itself (exit 2) and nothing is created
 # under HOME; a corrupt state file is refused whatever source it claims.
+_malformed_refused() {
+    local _rel="$1" _label
+    local _env=(env "HOME=${ITEM_H}" "XDG_CONFIG_HOME=${ITEM_H}/.config")
+    mkdir -p "${ITEM_H}/.config/${_rel%/*}" || return 1
+    printf '%s\n' "${VERIFY_BLOCK_BEGIN}" 'user content' >"${ITEM_H}/.config/${_rel}" || return 1
+    cp -a "${ITEM_H}" "${ITEM_T}/before" || return 1
+    _run_norm "${_env[@]}" just box setup --dry-run || return 1
+    [[ "${LAST_RC}" -eq 1 ]] || _bad=1
+    _run_norm "${_env[@]}" just box setup || return 1
+    [[ "${LAST_RC}" -eq 1 ]] || _bad=1
+    diff -r "${ITEM_T}/before" "${ITEM_H}" || return 1
+    _run_norm "${_env[@]}" just box status || return 1
+    [[ "${LAST_RC}" -eq 0 ]] || _bad=1
+    _label=ghostty
+    [[ "${_rel}" != distrobox/* ]] || _label=distrobox.conf
+    _expect_lines 3.4 "${_label}: <H>/.config/${_rel} (managed block: MALFORMED - BEGIN at line 1 has no END; fix or remove the markers, then re-run: just box setup)" || _bad=1
+    printf 'malformed-refused=%s unchanged=yes\n' "${_rel}"
+    rm -rf "${ITEM_T}/before" || return 1
+    rm -f "${ITEM_H}/.config/${_rel}" || return 1
+    return 0
+}
+
+_multiple_refused() {
+    local _case="$1" _file _copy
+    local _env=(env "HOME=${ITEM_H}" "XDG_CONFIG_HOME=${ITEM_H}/.config")
+    _file="${ITEM_H}/.config/${_case%%+*}"
+    mkdir -p "${_file%/*}" || return 1
+    printf '%s\n%s\n%s\n' "${VERIFY_BLOCK_BEGIN}" '# existing body' "${VERIFY_BLOCK_END}" >"${_file}" || return 1
+    if [[ "${_case}" == *+* ]]; then
+        cp "${_file}" "${ITEM_H}/.config/ghostty/config.ghostty" || return 1
+    else
+        _copy="$(cat "${_file}")" || return 1
+        printf '%s\n' "${_copy}" >>"${_file}" || return 1
+    fi
+    cp -a "${ITEM_H}" "${ITEM_T}/before" || return 1
+    _run_norm "${_env[@]}" just box setup --dry-run || return 1
+    [[ "${LAST_RC}" -eq 1 ]] || _bad=1
+    _run_norm "${_env[@]}" just box setup || return 1
+    [[ "${LAST_RC}" -eq 1 ]] || _bad=1
+    diff -r "${ITEM_T}/before" "${ITEM_H}" || return 1
+    if [[ "${_case}" != *+* ]]; then
+        _run_norm "${_env[@]}" just box status || return 1
+        [[ "${LAST_RC}" -eq 0 && "${LAST_OUT}" == *'managed block: MALFORMED'* ]] || _bad=1
+    fi
+    printf 'multiple-refused=%s unchanged=yes\n' "${_case}"
+    rm -rf "${ITEM_T}/before" || return 1
+    rm -f "${_file}" "${ITEM_H}/.config/ghostty/config.ghostty" || return 1
+    return 0
+}
+
 _item_3_4() {
     _require_tools env just sed find wc mktemp cp diff || return $?
     _item_begin || return 1
     local _bogus_rc _files _src _status_rc _bad=0
-
     local _env=(env "HOME=${ITEM_H}" "XDG_CONFIG_HOME=${ITEM_H}/.config")
     _run_norm "${_env[@]}" just box setup --bogus || return 1
     _bogus_rc="${LAST_RC}"
     printf 'rc=%s\n' "${_bogus_rc}"
     _files="$(_count_files "${ITEM_H}")" || return 1
     printf 'files=%s\n' "${_files}"
-
     mkdir -p -- "${ITEM_H}/.config/worktool" || {
         _fail "3.4: cannot create ${ITEM_H}/.config/worktool"
         return 1
@@ -1008,55 +1056,15 @@ _item_3_4() {
             _bad=1
         fi
     done
-
-    # Refusal must leave every file untouched, including the shared state.
     rm -f "${ITEM_H}/.config/worktool/config" || return 1
-    local _rel _label
+    local _rel
     for _rel in distrobox/distrobox.conf ghostty/config ghostty/config.ghostty; do
-        mkdir -p "${ITEM_H}/.config/${_rel%/*}" || return 1
-        printf '%s\n' "${VERIFY_BLOCK_BEGIN}" 'user content' >"${ITEM_H}/.config/${_rel}" || return 1
-        cp -a "${ITEM_H}" "${ITEM_T}/before" || return 1
-        _run_norm "${_env[@]}" just box setup --dry-run || return 1
-        [[ "${LAST_RC}" -eq 1 ]] || _bad=1
-        _run_norm "${_env[@]}" just box setup || return 1
-        [[ "${LAST_RC}" -eq 1 ]] || _bad=1
-        diff -r "${ITEM_T}/before" "${ITEM_H}" || _bad=1
-        _run_norm "${_env[@]}" just box status || return 1
-        [[ "${LAST_RC}" -eq 0 ]] || _bad=1
-        _label=ghostty
-        [[ "${_rel}" != distrobox/* ]] || _label=distrobox.conf
-        _expect_lines 3.4 "${_label}: <H>/.config/${_rel} (managed block: MALFORMED - BEGIN at line 1 has no END; fix or remove the markers, then re-run: just box setup)" || _bad=1
-        printf 'malformed-refused=%s unchanged=yes\n' "${_rel}"
-        rm -rf "${ITEM_T}/before" || return 1
-        rm -f "${ITEM_H}/.config/${_rel}" || return 1
+        _malformed_refused "${_rel}" || return 1
     done
-
-    local _case _file _copy
+    local _case
     for _case in distrobox/distrobox.conf ghostty/config ghostty/config+config.ghostty; do
-        _file="${ITEM_H}/.config/${_case%%+*}"
-        mkdir -p "${_file%/*}" || return 1
-        printf '%s\n%s\n%s\n' "${VERIFY_BLOCK_BEGIN}" '# existing body' "${VERIFY_BLOCK_END}" >"${_file}" || return 1
-        if [[ "${_case}" == *+* ]]; then
-            cp "${_file}" "${ITEM_H}/.config/ghostty/config.ghostty" || return 1
-        else
-            _copy="$(cat "${_file}")" || return 1
-            printf '%s\n' "${_copy}" >>"${_file}" || return 1
-        fi
-        cp -a "${ITEM_H}" "${ITEM_T}/before" || return 1
-        _run_norm "${_env[@]}" just box setup --dry-run || return 1
-        [[ "${LAST_RC}" -eq 1 ]] || _bad=1
-        _run_norm "${_env[@]}" just box setup || return 1
-        [[ "${LAST_RC}" -eq 1 ]] || _bad=1
-        diff -r "${ITEM_T}/before" "${ITEM_H}" || return 1
-        if [[ "${_case}" != *+* ]]; then
-            _run_norm "${_env[@]}" just box status || return 1
-            [[ "${LAST_RC}" -eq 0 && "${LAST_OUT}" == *'managed block: MALFORMED'* ]] || _bad=1
-        fi
-        printf 'multiple-refused=%s unchanged=yes\n' "${_case}"
-        rm -rf "${ITEM_T}/before" || return 1
-        rm -f "${_file}" "${ITEM_H}/.config/ghostty/config.ghostty" || return 1
+        _multiple_refused "${_case}" || return 1
     done
-
     if [[ "${_bogus_rc}" -ne 2 ]]; then
         _fail "3.4: just box setup --bogus exited ${_bogus_rc}, expected 2 (the script refuses an unknown option)"
         _bad=1
@@ -1080,15 +1088,30 @@ _require_no_distrobox_on_path() {
     fi
 }
 
-_item_3_5() {
-    _require_tools env just sed find wc grep ln mktemp || return $?
-    _item_begin || return 1
-    local _d _t _p _refuse_rc _before _files _write_rc _cmd _cmd_norm _grc _bad=0
-    _d="$(_resolve_exec distrobox 'the check needs a real one to pass to --distrobox')" || return $?
-    _resolve_exec ghostty 'setup must still resolve the terminal under the restricted PATH' >/dev/null || return $?
-    # <G> is deliberately NOT normalised here: the expected lines name
-    # <H>/bin/ghostty, the copy reached through the restricted PATH.
-    NORM_D="${_d}"
+# Just versions vary in capitalization and recipe line numbers.
+_expect_setup_failure() {
+    local _line _count=0
+    local _pattern="^error: [Rr]ecipe \`setup\` failed on line [0-9]+ with exit code 1$"
+    while IFS= read -r _line; do
+        if [[ "${_line}" =~ ${_pattern} ]]; then _count=$((_count + 1)); fi
+    done <<<"${LAST_OUT}"
+    [[ "${_count}" -eq 1 ]] && return 0
+    _fail "$1: expected exactly one setup recipe diagnostic with exit code 1, found ${_count}"
+    return 1
+}
+
+_expect_refusal_lines() {
+    _expect_lines 3.5 \
+        '[INFO] auto-enter: yes (default)' \
+        '[INFO] terminal: ghostty (default)' \
+        '[INFO] terminal detected: ghostty (ghostty executable <H>/bin/ghostty)' \
+        '[INFO] box: dev (default)' \
+        '[INFO] ghostty config: <H>/.config/ghostty/config (config.ghostty absent; legacy fallback)' \
+        '[ERROR] distrobox: not found on PATH - the managed command must name an absolute path a terminal launched from the desktop can run (install distrobox, or pass --distrobox <path>); nothing was written'
+}
+
+_prepare_restricted_setup_path() {
+    local _t _p
     mkdir -p -- "${ITEM_H}/bin" || {
         _fail "3.5: cannot create the throwaway bin directory"
         return 1
@@ -1111,25 +1134,10 @@ _item_3_5() {
     local _path="${ITEM_H}/bin"
     _require_no_distrobox_on_path 3.5 "${_path}" || return $?
 
-    # Counted AFTER the seeding, so "the refusal wrote nothing" is a claim
-    # about a HOME that already had the user's two files in it.
-    _before="$(_count_files "${ITEM_H}")" || return 1
+}
 
-    local _env=(env "HOME=${ITEM_H}" "XDG_CONFIG_HOME=${ITEM_H}/.config")
-    _env+=("PATH=${_path}")
-    _run_norm "${_env[@]}" just box setup || return 1
-    _refuse_rc="${LAST_RC}"
-    printf 'rc=%s\n' "${_refuse_rc}"
-    _files="$(_count_files "${ITEM_H}")" || return 1
-    printf 'files %s->%s\n' "${_before}" "${_files}"
-    # A refusal that rewrote a file it had no business touching keeps the
-    # file COUNT identical, so the content is what says it kept its hands off.
-    _expect_user_content 3.5 after-refusal || _bad=1
-
-    "${_env[@]}" just box setup --distrobox "${_d}" >/dev/null 2>&1
-    _write_rc=$?
-    printf 'rc=%s\n' "${_write_rc}"
-
+_check_explicit_setup_command() {
+    local _cmd _cmd_norm _grc _bad=0
     local _ghostty="${ITEM_H}/.config/ghostty/config"
     if [[ -f "${_ghostty}" && -r "${_ghostty}" ]]; then
         # The status of `grep` is read before its output is used: piping it
@@ -1152,10 +1160,34 @@ _item_3_5() {
         _fail "3.5: --distrobox left no readable ${_ghostty}"
         _bad=1
     fi
-    # The --distrobox run rented a block inside the user's config; it did
-    # not replace the config with one.
-    _expect_user_content 3.5 after-write || _bad=1
+    return "${_bad}"
+}
 
+_item_3_5() {
+    _require_tools env just sed find wc grep ln mktemp || return $?
+    _item_begin || return 1
+    local _d _refuse_rc _before _files _write_rc _bad=0
+    _d="$(_resolve_exec distrobox 'the check needs a real one to pass to --distrobox')" || return $?
+    _resolve_exec ghostty 'setup must still resolve the terminal under the restricted PATH' >/dev/null || return $?
+    NORM_D="${_d}"
+    _prepare_restricted_setup_path || return $?
+    local _path="${ITEM_H}/bin"
+    _before="$(_count_files "${ITEM_H}")" || return 1
+    local _env=(env "HOME=${ITEM_H}" "XDG_CONFIG_HOME=${ITEM_H}/.config")
+    _env+=("PATH=${_path}")
+    _run_norm "${_env[@]}" just box setup || return 1
+    _refuse_rc="${LAST_RC}"
+    _expect_refusal_lines || _bad=1
+    _expect_setup_failure 3.5 || _bad=1
+    printf 'rc=%s\n' "${_refuse_rc}"
+    _files="$(_count_files "${ITEM_H}")" || return 1
+    printf 'files %s->%s\n' "${_before}" "${_files}"
+    _expect_user_content 3.5 after-refusal || _bad=1
+    "${_env[@]}" just box setup --distrobox "${_d}" >/dev/null 2>&1
+    _write_rc=$?
+    printf 'rc=%s\n' "${_write_rc}"
+    _check_explicit_setup_command || _bad=1
+    _expect_user_content 3.5 after-write || _bad=1
     if [[ "${_refuse_rc}" -ne 1 ]]; then
         _fail "3.5: setup with no distrobox on PATH exited ${_refuse_rc}, expected 1"
         _bad=1
@@ -1352,6 +1384,8 @@ but status reported
 _item_3_7() {
     _require_tools env just sed grep mktemp sh || return $?
     _item_begin || return 1
+    NORM_D="$(_resolve_exec distrobox 'setup writes its absolute path into the managed command')" || return $?
+    NORM_G="$(_resolve_exec ghostty 'setup resolves the terminal executable')" || return $?
     _seed_user_content 3.7 || return 1
     local _conf="${ITEM_H}/.config/distrobox/distrobox.conf" _blocks _bad=0
     mkdir -p "${ITEM_H}/.config/distrobox" || return 1
@@ -1497,6 +1531,43 @@ EOF
     chmod +x "${ITEM_T}/bin/mv"
 }
 
+_expect_atomic_setup() {
+    _expect_lines 3.10 \
+        '[INFO] auto-enter: yes (default)' \
+        '[INFO] terminal: ghostty (user)' \
+        '[INFO] box: dev (default)' \
+        '[INFO] ghostty config: <H>/.config/ghostty/config (config.ghostty absent; legacy fallback)' \
+        '[INFO] distrobox: <D> (absolute path written into the managed command)' \
+        '[INFO] wrote: <H>/.config/worktool/config' || return 1
+    if [[ "$1" == failure ]]; then
+        _expect_lines 3.10 \
+            "[INFO] wrote: <H>/.config/distrobox/distrobox.conf (managed block: ${ISOLATION_BODY})" \
+            '[ERROR] failed to write <H>/.config/ghostty/config'
+    else
+        _expect_lines 3.10 \
+            '[INFO] unchanged: <H>/.config/distrobox/distrobox.conf (managed block already up to date)' \
+            "[INFO] wrote: <H>/.config/ghostty/config (managed block: ${MANAGED_CMD})" \
+            "${GHOSTTY_RELOAD_HINT}"
+    fi
+}
+
+_expect_atomic_status() {
+    _expect_lines 3.10 \
+        'config: <H>/.config/worktool/config' \
+        'auto-enter: yes (default)' \
+        'terminal: ghostty (user)' \
+        'box: dev (default)' \
+        'link: box HOME not recorded - user config not linked yet (run: just box assemble)' \
+        'home: not recorded (run: just box assemble)' || return 1
+    if [[ "$1" == absent ]]; then
+        _expect_lines 3.10 'distrobox: <D> (on PATH; no managed block records one)'
+    else
+        _expect_lines 3.10 \
+            'wrapper: <repo>/script/box/enter.sh (recorded in a managed block: runnable)' \
+            'distrobox: <D> (recorded in a managed block: runnable)'
+    fi
+}
+
 _item_3_10() {
     _setup_path_begin 3.10 || return $?
     local _file="${ITEM_H}/.config/ghostty/config" _mv _count
@@ -1508,8 +1579,8 @@ _item_3_10() {
         just box setup --terminal ghostty || return 1
     printf 'setup-rc=%s\n' "${LAST_RC}"
     [[ "${LAST_RC}" -eq 1 ]] || return 1
-    _expect_lines 3.10 '[ERROR] failed to write <H>/.config/ghostty/config' \
-        '[INFO] wrote: <H>/.config/worktool/config' || return 1
+    _expect_atomic_setup failure || return 1
+    _expect_setup_failure 3.10 || return 1
     _count="$(_count_matching '^\[ERROR\]' "${ITEM_T}/run.out")" || return 1
     [[ "${_count}" -eq 1 ]] || return 1
     cmp -s "${_file}" "${ITEM_T}/original" || return 1
@@ -1517,10 +1588,12 @@ _item_3_10() {
     [[ ! -s "${ITEM_T}/temps" ]] || return 1
     printf 'original=intact temp-files=0\n'
     _path_status 3.10 absent || return 1
+    _expect_atomic_status absent || return 1
     _path_setup || return 1
-    _expect_lines 3.10 "[INFO] wrote: <H>/.config/ghostty/config (managed block: ${MANAGED_CMD})" || return 1
+    _expect_atomic_setup recovery || return 1
     _expect_user_content 3.10 after-recovery || return 1
-    _path_status 3.10 present
+    _path_status 3.10 present || return 1
+    _expect_atomic_status present
 }
 
 _mode_paths() {
@@ -1535,6 +1608,8 @@ _mode_paths() {
         "${GHOSTTY_USER_LINES[@]}" || return 1
     _check_user_content 3.11 "${_phase}" distrobox.conf "${ITEM_H}/.config/distrobox/distrobox.conf" \
         '# acceptance isolation' || return 1
+    _check_user_content 3.11 "${_phase}" tmux.conf "${ITEM_H}/.tmux.conf" \
+        "${TMUX_USER_LINES[@]}" || return 1
     grep -qxF '# acceptance state' "${ITEM_H}/.config/worktool/config"
 }
 

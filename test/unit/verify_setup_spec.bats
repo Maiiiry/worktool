@@ -77,7 +77,7 @@
 #   put on PATH) and then break exactly one thing, so each case pins one
 #   guard instead of breaking the run wholesale.
 #
-#   The first case is the control: with everything behaving, all six items
+#   The first case is the control: with everything behaving, all thirteen items
 #   pass. Without it the failure cases below would also be satisfied by a
 #   script that can never pass at all.
 
@@ -104,8 +104,8 @@ setup() {
     REAL_MKTEMP="$(command -v mktemp)"
     REAL_JUST="$(command -v just)"
 
-    # No test image ships ghostty; setup.sh only ever runs `command -v` on
-    # it, so an executable that does nothing is a faithful stand-in.
+    # No test image ships ghostty; a no-output stand-in resolves on PATH
+    # and makes the optional +version probe yield no recognized version.
     _stub ghostty '#!/bin/sh' 'exit 0'
 
     # A PATH that holds just and ghostty but NOT distrobox (which the image
@@ -236,7 +236,7 @@ _stub_mktemp_dir_then_fail() {
 #              while the removal run still reports removing one
 _stub_just_setup_writing() {
     export VERIFY_REAL_JUST="${REAL_JUST}" VERIFY_PRODUCT_LIB="${REPO_ROOT}/lib/enter.sh"
-    export VERIFY_CORRUPTION="$1"
+    export VERIFY_CORRUPTION="$1" VERIFY_CRITERION="${2:-}"
     _stub just '#!/usr/bin/env bash' 'set -euo pipefail' \
         "exec bash $(printf '%q' "${BATS_TEST_DIRNAME}/fixture/verify_setup_just.sh") \"\$@\""
 }
@@ -1226,11 +1226,10 @@ _assert_setup_verbatim() {
 @test "setup acceptance controls do not write agent state into the checkout" {
     local _repo _item
     _repo="$(_repo_copy)"
-    local REPO_ROOT="${_repo}"
-    cd "${REPO_ROOT}"
+    cd "${_repo}"
     for _item in 3.10 3.11 3.12 3.13; do
         _setup_acceptance_control "${_item}"
-        assert [ ! -e "${REPO_ROOT}/.agents" ]
+        assert [ ! -e "${_repo}/.agents" ]
     done
 }
 
@@ -1242,14 +1241,19 @@ _setup_acceptance_control() {
     assert_success
 }
 
-# Every other registered item must remain green on the same degraded copy.
+# Every registered item outside the exclusion list must remain green on the same degraded copy.
 _setup_acceptance_others() {
-    local _repo="$1" _except="$2" _item _rest=()
+    local _repo="$1" _except _item _rest=()
+    shift
     output=""
     run just --justfile "${_repo}/justfile" verify setup --list
     assert_success
     while read -r _item _; do
-        [[ "${_item}" == 3.* && "${_item}" != "${_except}" ]] && _rest+=("${_item}")
+        [[ "${_item}" == 3.* ]] || continue
+        for _except in "$@"; do
+            [[ "${_item}" == "${_except}" ]] && continue 2
+        done
+        _rest+=("${_item}")
     done <<<"${output}"
     run just --justfile "${_repo}/justfile" verify setup "${_rest[@]}"
     assert_success
@@ -1328,5 +1332,107 @@ _degrade_setup_line() {
     run just --justfile "${_repo}/justfile" verify setup 3.13
     assert_failure 1
     refute_output --partial '3.13 PASS'
-    _setup_acceptance_others "${_repo}" 3.13
+    # The shared unchanged diagnostic is also required by the 3.10 rerun criterion.
+    run just --justfile "${_repo}/justfile" verify setup 3.10
+    assert_failure 1
+    refute_output --partial '3.10 PASS'
+    assert_line "[FAIL] 3.10: expected exactly one line equal to '[INFO] unchanged: <H>/.config/distrobox/distrobox.conf (managed block already up to date)', found 0"
+    _setup_acceptance_others "${_repo}" 3.13 3.10
+}
+
+@test "#713 3.7: missing distrobox is unavailable through just" {
+    run env PATH="${NO_DISTROBOX_PATH}" "${REAL_JUST}" --justfile "${REPO_ROOT}/justfile" verify setup 3.7
+    assert_failure 3
+    assert_line '[UNAVAILABLE] setup.sh: distrobox not found on PATH'
+}
+
+@test "#713 3.1: every documented dry-run line occurs exactly once" {
+    local criterion corruption
+    for criterion in 'ghostty config:' 'distrobox.conf (managed block:'; do
+        for corruption in omit-line duplicate-line; do
+            _stub_just_setup_writing "${corruption}" "${criterion}"
+            run "${VERIFY}" 3.1
+            assert_failure 1
+            assert_output --partial 'expected exactly one line'
+        done
+    done
+}
+
+@test "#713 3.5: refusal product lines occur exactly once" {
+    local criterion corruption
+    for criterion in 'auto-enter:' 'terminal: ghostty' 'terminal detected:' 'box: dev' 'ghostty config:' '[ERROR] distrobox:'; do
+        for corruption in omit-line duplicate-line; do
+            _stub_just_setup_writing "${corruption}" "${criterion}"
+            run "${VERIFY}" 3.5
+            assert_failure 1
+            assert_output --partial 'expected exactly one line'
+        done
+    done
+}
+
+@test "#713 3.10: fixed setup and status lines occur exactly once" {
+    local criterion corruption
+    for criterion in 'auto-enter:' 'terminal: ghostty' 'box: dev' 'ghostty config:' '[INFO] distrobox:' 'wrote:' 'unchanged:' 'Ghostty config changed:' 'config:' 'distrobox:' 'link:' 'home:' 'wrapper:'; do
+        for corruption in omit-line duplicate-line; do
+            _stub_just_setup_writing "${corruption}" "${criterion}"
+            run "${VERIFY}" 3.10
+            assert_failure 1
+        done
+    done
+}
+
+@test "#713 3.3: removal rejects tmux decisions and removal messages" {
+    local message
+    for message in '[INFO] tmux: host (default)' '[INFO] removed: /throwaway/.tmux.conf (managed block: old)'; do
+        _stub_just_setup_writing tmux-message "${message}"
+        run "${VERIFY}" 3.3
+        assert_failure 1
+        assert_output --partial 'expected no line containing'
+    done
+}
+
+@test "#713 content: an extra trailing blank line is detected" {
+    _stub_just_setup_writing trailing-blank
+    run "${VERIFY}" 3.7
+    assert_failure 1
+    assert_line 'user-content after-write: ghostty=intact tmux.conf=LOST'
+}
+
+@test "#713 content: a missing final newline is detected" {
+    _stub_just_setup_writing missing-newline
+    run "${VERIFY}" 3.7
+    assert_failure 1
+    assert_line 'user-content after-write: ghostty=intact tmux.conf=LOST'
+}
+
+@test "#713 3.11: host tmux content is checked after managed file changes" {
+    _stub_just_setup_writing trailing-blank
+    run "${VERIFY}" 3.11
+    assert_failure 1
+    assert_output --partial "tmux.conf lost the user's own content"
+}
+
+@test "#713 3.4: a changed HOME never reports unchanged=yes" {
+    _stub_just_setup_writing malformed-write
+    run "${VERIFY}" 3.4
+    assert_failure 1
+    refute_output --partial 'malformed-refused=ghostty/config unchanged=yes'
+}
+
+@test "#713 diagnostics: refusal checks the setup recipe name and exit code" {
+    local item corruption
+    for item in 3.5 3.10; do
+        for corruption in omit-line duplicate-line; do
+            _stub_just_setup_writing "${corruption}" 'error: Recipe'
+            run "${VERIFY}" "${item}"
+            assert_failure 1
+        done
+    done
+}
+
+@test "#713 normalization: setup 3.7 prints distrobox placeholders" {
+    run "${REAL_JUST}" --justfile "${REPO_ROOT}/justfile" verify setup 3.7
+    assert_success
+    assert_line '[INFO] distrobox: <D> (absolute path written into the managed command)'
+    assert_line "[INFO] wrote: <H>/.config/ghostty/config (managed block: ${MANAGED_EXPECTED})"
 }

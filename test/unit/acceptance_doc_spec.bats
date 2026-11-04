@@ -471,6 +471,17 @@ _compare_52_doc() {
     assert_failure
 }
 
+@test "#713: setup user-content coverage includes every seeded path" {
+    local paragraph section item
+    paragraph="$(sed -n '/受管檔案是.*使用者的/p' "${REPO_ROOT}/doc/acceptance.md")"
+    for item in 3.10 3.11 3.12 3.13; do
+        [[ "${paragraph}" == *"${item}"* ]]
+    done
+    section="$(sed -n '/^  - \[ \] 3\.11 /,/^  - \[ \] 3\.12 /p' "${REPO_ROOT}/doc/acceptance.md")"
+    [[ "${section}" == *"每次寫入、改寫與移除後都檢查 \`~/.tmux.conf\` 的使用者內容"* ]]
+    [[ "${paragraph}" == *'檔尾空白行與最後換行'* ]]
+}
+
 @test "#714: acceptance 2.3 limits exact case counts to selected ok lines" {
     local section
     section="$(sed -n '/^  - \[ \] 2\.3 /,/^  - \[ \] 2\.4 /p' "${REPO_ROOT}/doc/acceptance.md")"
