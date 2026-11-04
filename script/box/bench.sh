@@ -41,7 +41,7 @@
 # If the stopped box cannot be resolved initially, discovery is repeated
 # before every run (warmups included) until it succeeds. Missing box
 # boundaries are listed in the final summary, never called quiet.
-# PSI is read again and recorded (one stderr line: `psi before|after
+# PSI is read again and recorded (one stderr line per readable source: `psi before|after
 # <metric> run <k>: <path> some avg10=<value>`) before and after every
 # run, a failed run included; one reading above the limit voids the whole
 # batch (exit 3, even when that run also failed; slow samples are never
@@ -198,8 +198,8 @@ prints `<metric>: min=<ms> median=<ms> max=<ms> ms` (one line each).
   -h, --help     Show this help and exit.
 
 EOF
-    _usage_rules
-    _usage_env
+    _usage_rules >&2
+    _usage_env >&2
 }
 
 _usage_rules() {
@@ -579,6 +579,10 @@ _psi_sample() {
         fi
         PSI_VAL="${_own}"
     fi
+    if (( _rc != 0 )); then
+        PSI_JUDGE_PATH="${PSI_PATH}"
+        PSI_VAL=""
+    fi
     return "${_rc}"
 }
 
@@ -636,7 +640,7 @@ _host_precondition() {
 }
 
 # Read PSI at the sample boundary $1 names ("before enter run 3"), record
-# it (one stderr line: the boundary, the path and the value) and return 3 -
+# it (one stderr line per readable source: boundary, path and value) and return 3 -
 # the whole batch is void - when it is above the limit or unreadable.
 # Tracks the batch's peak reading. A no-op when no PSI is in use.
 _psi_guard() {

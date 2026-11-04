@@ -8,11 +8,12 @@
 #
 #   Host side  - builds the test image if needed, then runs THIS script
 #                back inside a throwaway container with the /source bind
-#                mount. Selected by --lint / --unit / --integration /
-#                --system / --system-real / --acceptance; NO option runs
+#                mount. Selected by --lint / --unit / --matrix /
+#                --integration / --system / --acceptance / --system-real;
+#                NO option runs
 #                all of them, in that order, stopping at the first failure.
 #   Container  - runs the actual gate against the mounted source. Selected
-#                by --ci-lint / --ci-unit / --ci-integration /
+#                by --ci-lint / --ci-unit / --ci-matrix / --ci-integration /
 #                --ci-integration-ghostty / --ci-system / --ci-system-real /
 #                --ci-acceptance (internal).
 #
@@ -145,6 +146,7 @@ _required_specs() {
                 unit/status_spec.bats \
                 unit/link_spec.bats \
                 unit/config_spec.bats \
+                unit/config_mutation_drift_spec.bats \
                 unit/config_mutation_spec.bats \
                 unit/config_owner_spec.bats \
                 unit/config_validate_spec.bats \
@@ -429,6 +431,7 @@ _run_lint() (
 )
 
 # Only the optional CPU repro cases may skip in the unit tier.
+# Returns 0 for unexpected skips, 1 for none, and >= 2 on awk failure.
 _has_unexpected_skip() {
     awk -v tier="$1" -v stress="${WORKTOOL_STRESS:-}" '
         /^ok [0-9]+ .*# skip/ {
@@ -451,7 +454,7 @@ _has_unexpected_skip() {
 # the $3 cases the required specs define, and no unexpected case skipped (bats
 # itself exits 0 on a skip). Prints the reason and returns 1 on any miss.
 _verify_tap() {
-    local _tier="$1" _tap="$2" _min="$3" _plan
+    local _tier="$1" _tap="$2" _min="$3" _plan _skip_rc=0
     # One awk, no `| head`: an unreadable stream is a missing plan (return
     # 1 below), and there is no early-closed pipe to fail under pipefail.
     if ! _plan="$(awk '/^1\.\.[0-9]+$/ { sub(/^1\.\./, ""); print; exit }' "${_tap}")" \
@@ -467,8 +470,13 @@ _verify_tap() {
         _err "${_tier} bats plan (${_plan}) is below the required specs' case total (${_min})"
         return 1
     fi
-    if _has_unexpected_skip "${_tier}" "${_tap}"; then
+    _has_unexpected_skip "${_tier}" "${_tap}" || _skip_rc=$?
+    if [[ "${_skip_rc}" -eq 0 ]]; then
         _err "${_tier} bats has skipped case(s) - a skipped required case is not green"
+        return 1
+    fi
+    if [[ "${_skip_rc}" -ne 1 ]]; then
+        _err "${_tier} bats skip check failed (awk exit ${_skip_rc})"
         return 1
     fi
     return 0
@@ -496,7 +504,8 @@ _die_bats_failed() {
 # Green requires: the paths exist, every required spec of the tier exists
 # and defines cases (_check_required_specs, before bats runs), no case
 # failed, and the TAP stream passes _verify_tap (plan covers the required
-# cases, nothing skipped). The stream is captured (and echoed) for that.
+# cases, no unexpected skips). Only the three opt-in CPU repro cases may
+# skip in unit when stress is disabled. The stream is captured (and echoed).
 _run_bats_tier() {
     local _tier="$1" _filter="$2"
     shift 2
@@ -609,6 +618,8 @@ Environment:
   TEST_IMAGE             test image tag (default worktool-test:local)
   TEST_IMAGE_PREBUILT=1  skip the test image build (CI loads a prebuilt one)
   WORKTOOL_TEST_JOBS     bats files to run in parallel (default 4)
+  WORKTOOL_STRESS=1      run the three opt-in CPU repro cases (otherwise may skip in unit)
+  WORKTOOL_TEST_RUN_ID   label test containers with worktool.verify-run=<id>
   SYSTEM_REAL_IMAGE      DinD runner image tag (default worktool-system-real:local)
   GHOSTTY_IMAGE          ghostty image tag (default worktool-ghostty:local)
 EOF
@@ -767,17 +778,46 @@ _changed_files() {
 _changed_path_map() {
     cat <<'MAP'
 lib/log.sh|test/unit/log_spec.bats
+lib/log.sh|test/unit/config_spec.bats
+lib/log.sh|test/unit/link_spec.bats
+lib/log.sh|test/unit/verify_run_signal_spec.bats
+lib/log.sh|test/unit/verify_realbox_spec.bats
 lib/manifest.sh|test/unit/manifest_spec.bats
 lib/home.sh|test/unit/assemble_spec.bats
 lib/home.sh|test/unit/setup_spec.bats
 lib/home.sh|test/unit/status_spec.bats
 lib/enter.sh|test/unit/enter_spec.bats
+lib/enter.sh|test/unit/box_tmux_env_spec.bats
+lib/enter.sh|test/unit/config_backup_spec.bats
+lib/enter.sh|test/unit/managed_block_spec.bats
+lib/enter.sh|test/unit/setup_spec.bats
+lib/enter.sh|test/unit/verify_realbox_spec.bats
+lib/enter.sh|test/unit/verify_setup_spec.bats
 lib/approval.sh|test/unit/approval_spec.bats
 lib/approval.sh|test/unit/hook/enforce_milestone_gate_approval_representative_spec.bats
 lib/approval.sh|test/unit/hook/approval_check_spec.bats
 lib/attribution.sh|test/unit/attribution_spec.bats
 lib/commit_attribution.sh|test/unit/commit_attribution_spec.bats
 lib/commit_email.sh|test/unit/commit_email_spec.bats
+lib/commit_refs.sh|test/unit/commit_refs_spec.bats
+lib/config.sh|test/unit/config_spec.bats
+lib/config.sh|test/unit/verify_setup_spec.bats
+lib/config.sh|test/unit/verify_realbox_spec.bats
+lib/config_backup.sh|test/unit/config_backup_spec.bats
+lib/distrobox_manager.sh|test/unit/verify_realbox_spec.bats
+lib/guard.sh|test/unit/guard_spec.bats
+lib/guard.sh|test/unit/config_backup_spec.bats
+lib/guard.sh|test/unit/config_backup_dangling_spec.bats
+lib/guard.sh|test/unit/verify_config_backup_cache_spec.bats
+lib/guard.sh|test/unit/verify_realbox_spec.bats
+lib/guard.sh|test/unit/verify_realbox_matrix_spec.bats
+lib/link.sh|test/unit/link_spec.bats
+lib/realbox_interrupt.sh|test/unit/verify_realbox_spec.bats
+lib/realbox_interrupt.sh|test/unit/verify_realbox_matrix_spec.bats
+lib/review_log.sh|test/unit/review_log_spec.bats
+lib/verify_run.sh|test/unit/verify_run_signal_spec.bats
+lib/verify_run.sh|test/unit/verify_realbox_spec.bats
+lib/verify_run.sh|test/unit/verify_realbox_matrix_spec.bats
 script/box/assemble.sh|test/unit/assemble_spec.bats
 script/box/assemble.sh|test/integration/assemble_spec.bats
 script/box/assemble.sh|test/system/real_assemble_spec.bats
@@ -788,6 +828,36 @@ script/box/setup.sh|test/unit/setup_spec.bats
 script/box/setup.sh|test/integration/setup_spec.bats
 script/box/status.sh|test/unit/status_spec.bats
 script/box/justfile.box|test/unit/justfile_spec.bats
+script/verify/all.sh|test/unit/verify_all_spec.bats
+script/verify/config_backup_paths.sh|test/unit/config_backup_spec.bats
+script/verify/config_backup_paths.sh|test/unit/config_backup_dangling_spec.bats
+script/verify/config_backup_paths.sh|test/unit/verify_config_backup_cache_spec.bats
+script/verify/config_backup_paths.sh|test/unit/verify_realbox_spec.bats
+script/verify/config_backup_paths.sh|test/unit/acceptance_doc_spec.bats
+script/verify/diagram.sh|test/unit/verify_diagram_spec.bats
+script/verify/diagram.sh|test/unit/verify_all_spec.bats
+script/verify/diagram.sh|test/unit/verify_list_spec.bats
+script/verify/evidence.sh|test/unit/verify_evidence_spec.bats
+script/verify/evidence.sh|test/unit/verify_all_spec.bats
+script/verify/evidence.sh|test/unit/verify_list_spec.bats
+script/verify/gate.sh|test/unit/verify_gate_spec.bats
+script/verify/gate.sh|test/unit/verify_all_spec.bats
+script/verify/gate.sh|test/unit/verify_list_spec.bats
+script/verify/justfile.verify|test/unit/verify_all_spec.bats
+script/verify/justfile.verify|test/unit/verify_list_spec.bats
+script/verify/justfile.verify|test/unit/verify_setup_spec.bats
+script/verify/justfile.verify|test/unit/acceptance_doc_spec.bats
+script/verify/realbox.sh|test/unit/verify_realbox_spec.bats
+script/verify/realbox.sh|test/unit/verify_realbox_matrix_spec.bats
+script/verify/realbox.sh|test/unit/verify_all_spec.bats
+script/verify/realbox.sh|test/unit/verify_list_spec.bats
+script/verify/realbox.sh|test/unit/acceptance_doc_spec.bats
+script/verify/setup.sh|test/unit/verify_setup_spec.bats
+script/verify/setup.sh|test/unit/verify_all_spec.bats
+script/verify/setup.sh|test/unit/verify_list_spec.bats
+script/verify/ui.sh|test/unit/verify_ui_spec.bats
+script/verify/ui.sh|test/unit/verify_all_spec.bats
+script/verify/ui.sh|test/unit/verify_list_spec.bats
 MAP
     _changed_hook_path_map
     _changed_doc_path_map
@@ -911,7 +981,7 @@ _add_changed_spec() {
 # Single source for repository-wide guards; optional files follow the checkout.
 _guard_specs() {
     local _spec
-    for _spec in config_owner config_mutation config_validate config_graph \
+    for _spec in config_owner config_mutation_drift config_validate config_graph \
         adr ci_gate justfile test_changed test_sh contract diagram agent_config script_layout \
         verify_ui; do
         [[ ! -f "${REPO_ROOT}/test/unit/${_spec}_spec.bats" ]] \
@@ -956,6 +1026,23 @@ _add_changed_guards() {
     esac
 }
 
+# The rows describe properties of lib/config.sh and the owner modules' cases.
+# Keep their inputs in one place; small fixture checkouts may omit this suite.
+_mutation_inputs() (
+    local _helper="${REPO_ROOT}/test/helper/config_mutation_rows.bash"
+    if [[ ! -f "${_helper}" || ! -f "${REPO_ROOT}/test/unit/config_mutation_spec.bats" ]]; then
+        return 0
+    fi
+    # shellcheck source=test/helper/config_mutation_rows.bash
+    source "${REPO_ROOT}/test/helper/config_mutation_rows.bash"
+    {
+        printf '%s\n' lib/config.sh
+        _owner_rows | cut -d'|' -f1
+        { _rows | cut -d'|' -f6; _owner_rows | cut -d'|' -f3; } |
+            tr ';' '\n' | awk -F'@' '$1 != "-" && $1 != "" { print "test/" $1 }'
+    } | sort -u
+)
+
 _is_test_infrastructure() {
     case "$1" in
         script/test/*|dockerfile/Dockerfile.*|Dockerfile|Dockerfile.*|justfile*|test/helper/*) return 0 ;;
@@ -994,7 +1081,7 @@ _run_changed_tiers() {
 }
 
 _run_changed() {
-    local _base="$1" _list _path _spec _mapped _full_fallback=0
+    local _base="$1" _list _path _spec _mapped _mutation_paths _full_fallback=0
     local _full_unit=0 _full_matrix=0 _full_integration=0
     local _full_system=0 _full_acceptance=0
     local _ghostty=0 _system_real=0 _guards_selected=0
@@ -1004,8 +1091,21 @@ _run_changed() {
         _info "changed-file diff unreadable; verification left to CI"
         _full_fallback=1
     fi
+    _mutation_paths="$(_mutation_inputs)"
     while IFS= read -r _path; do
         _add_changed_guards "${_path}"
+        case "${_path}" in
+            test/helper/config_mutation_rows.bash|test/helper/config_mutation_mutants.bash)
+                _add_changed_spec test/unit/config_mutation_drift_spec.bats
+                _add_changed_spec test/unit/config_mutation_spec.bats
+                ;;
+            *)
+                if [[ "${_path}" == test/unit/config_mutation_spec.bats ]] \
+                    || grep -qxF "${_path}" <<<"${_mutation_paths}"; then
+                    _add_changed_spec test/unit/config_mutation_spec.bats
+                fi
+                ;;
+        esac
         if [[ "${_path}" == dockerfile/Dockerfile.ghostty ]]; then
             _info "此改動由 CI 的 integration 驗證：${_path}（測試基礎設施變更；專用 runner）"
             continue
