@@ -836,6 +836,7 @@ _52_window_require_tools() {
 
 _52_open_window() {
     _52_WINDOW_PENDING=0
+    _52_WINDOW_ROOT=''
     _52_window_require_tools || return $?
     _52_desktop_preflight || return $?
     _52_WINDOW_DIR="$(mktemp -d "${CFGBK_B}/window.XXXXXXXX")" || return 1
@@ -936,6 +937,7 @@ _52_find_window() {
                 sleep 0.1 || return 3
                 continue
             }
+            _52_WINDOW_ROOT="${apply_root}"
         fi
         rc=0
         _52_scan_shells "${mode}" "${apply_root}" || rc=$?
@@ -977,6 +979,7 @@ _52_scan_shells() {
             }
         fi
         [[ -n "${root}" ]] || continue
+        _52_WINDOW_ROOT="${root}"
         if [[ "${mode}" == apply ]]; then
             # Login wrappers share the owned cwd before exec into fish.
             if [[ "${comm}" != fish ]]; then
@@ -1133,6 +1136,10 @@ _52_close_window() {
         sleep 0.1 || { _52_keep_window; return 1; }
     done
     [[ "${scanned}" -eq 1 ]] || { _52_keep_window; return 1; }
+    if [[ "${rc}" -eq 2 && -n "${_52_WINDOW_ROOT:-}" ]]; then
+        _52_stop_window "${_52_WINDOW_ROOT}" || { _52_keep_window; return 1; }
+    fi
+    (( SECONDS < _52_DEADLINE )) || { _52_keep_window; return 1; }
     rm -rf -- "${_52_WINDOW_DIR}" || return 1
     _52_WINDOW_DIR=''
 }
