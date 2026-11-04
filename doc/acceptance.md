@@ -587,10 +587,7 @@ rc=0
       輸出類型：動態示例；編號、數量、SHA、行號與實測值不逐字比對，固定判準依本項說明。
       ```text
       ./script/verify/gate.sh "$@"
-      ./script/test/test.sh
-      [ci] ShellCheck OK
-      （required specs OK 的案例與檔案數直接由 script/test/test.sh 掃描現行 declarations）
-      ...(每層的 N 由來源掃描取得，1..N 全部 ok,各以 `[ci] <tier> bats OK` 結尾;沒有 not ok，skip 僅允許下列 unit 負載重現例外)
+      ...(stdout：每層的 N 由來源掃描取得，1..N 全部 ok;沒有 not ok，skip 僅允許下列 unit 負載重現例外)
       ok 7 real engine: distrobox enter dev -- tmux -V prints a tmux version (auto-enter prerequisite)
       ok 8 real engine: distrobox enter dev -- fish --version prints a fish version (auto-enter prerequisite)
       # bench: enter: min=91.1 median=93.8 max=102.0 ms
@@ -600,11 +597,17 @@ rc=0
       ok 9 real engine: bench.sh --box dev --runs 5 --warmup 2 --shell 'fish -c exit' --max-ms ENTER_MAX_MS exits 0 (enter-latency gate on fish) and prints the enter, shell and inbox metric lines
       # bench-gate: [ERROR] shell median 98.4 ms exceeds --max-ms 1
       ok 10 real engine: bench.sh --box dev --runs 1 --warmup 0 --shell 'fish -c exit' --max-ms 1 exits 1 with the threshold message (the gate bites on a real box)
+      ...(接著重播 stderr，以下省略其他階段的診斷)
+      ./script/test/test.sh
+      [ci] ShellCheck OK
+      （required specs OK 的案例與檔案數直接由 script/test/test.sh 掃描現行 declarations）
+      ...(各層的 `[ci] <tier> bats OK`)
       [ci] system-real bats OK
       [system-real] cleanup: containers left in the nested daemon: 0
       rc=0
       ```
-      (本項把整條 `just test` 的輸出原樣串到你的終端 —— `[ci]` 那些行是 stderr,上面一起列出。數字是你機器的實測;判準 = `just test` **自己**回 0,加上 shell median ≤ 300 且三行指標都在。自動測試只證明「盒內有 tmux + fish、進盒 + 起 fish ≤ 300 ms」;「ghostty 開窗 -> 受管 command -> 盒內 fish」整條鏈由 2.3 在 CI 內驗證,實機主觀感受由 5.2 驗)
+      (本項完整擷取整條 `just test` 的 stdout 與 stderr 後，先將 stdout 重播到 stdout，再將 stderr 重播到 stderr，各串流內的內容與順序保留；上例按重播順序列出，不代表執行當下兩串流的交錯順序。`[ci]` 與 `[system-real]` 行屬於 stderr。數字是你機器的實測;判準 = `just test` **自己**回 0,加上 shell median ≤ 300 且三行指標都在。自動測試只證明「盒內有 tmux + fish、進盒 + 起 fish ≤ 300 ms」;「ghostty 開窗 -> 受管 command -> 盒內 fish」整條鏈由 2.3 在 CI 內驗證,實機主觀感受由 5.2 驗)
+    - 依 ADR 0003，若 `just test` 回 1，且完整 system-real TAP 的所有紅燈都只來自上述兩個 bench 案例，每個紅燈都同時帶有 assertion 的 exit 3 與 bench 主機忙碌的未判定診斷，2.1 印出「延遲 gate 未判定、請在閒置時重跑」並回 3，不印 PASSED／FAILED。`just verify all` 顯示 `verify all: gate UNAVAILABLE (rc=3)`，總判決仍非通過並回 3。其他失敗、混合失敗、輸出不完整或無法可靠辨識時，一律回 1；system-real 本身仍將 bench 的 3 當紅燈，CI 不跳過 gate。2.1 分別完整擷取兩個串流，再依上述順序重播供判讀；未判定辨識不依賴 stdout 與 stderr 之間的到達順序。
     - 唯一 skip 例外：未設 `WORKTOOL_STRESS=1`（未設定或值不是 `1`）時，unit 層只允許以下三個 CPU 負載重現案例以列出的訊息 skip。除此之外，每層都不得有任何 skip；設 `WORKTOOL_STRESS=1` 時，這三個案例也不得 skip。案例名稱與訊息必須完全符合 `script/test/test.sh` 的豁免清單。
 
       | 案例名稱 | skip 訊息（TAP 後綴） |

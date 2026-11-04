@@ -117,7 +117,7 @@ _make_repo_copy() {
     cp "${REPO_ROOT}/script/verify/gate.sh" "${COPY}/script/verify/gate.sh"
     cp -R "${REPO_ROOT}/doc/evidence" "${COPY}/doc/evidence"
     mkdir -p "${COPY}/lib"
-    cp "${REPO_ROOT}/lib/guard.sh" "${REPO_ROOT}/lib/log.sh" "${REPO_ROOT}/lib/verify_run.sh" "${COPY}/lib/"
+    cp "${REPO_ROOT}/lib/guard.sh" "${REPO_ROOT}/lib/log.sh" "${REPO_ROOT}/lib/verify_run.sh" "${REPO_ROOT}/lib/verify_busy_latency.awk" "${COPY}/lib/"
 }
 
 # _stub <name> - body on stdin. The body runs with $REAL set to the real
@@ -585,6 +585,145 @@ EOF
 
 # --- Item 2.1: the seven-stage run is judged by its own status ------------------
 
+# Generate real bats-assert diagnostics instead of assuming their format.
+_stub_busy_latency() {
+    local _fixture="${BATS_TEST_TMPDIR}/latency.bats"
+    printf 'load "%s/test/helper/common"\n' "${REPO_ROOT}" >"${_fixture}"
+    sed -n '/^@test "real engine: bench.sh /p' \
+        "${REPO_ROOT}/test/system/real_engine_spec.bats" | while IFS= read -r _test; do
+        printf '%s\n' "${_test}" >>"${_fixture}"
+        cat >>"${_fixture}" <<'EOF'
+    run bash -c 'if [[ ${BUSY_MULTILINE:-0} == 1 ]]; then echo "[INFO] waiting for a quiet host"; fi; echo "[ERROR] host too busy to measure (inconclusive): /proc/pressure/cpu some avg10=3.00 for 60s; loadavg=4; re-run when idle" >&2; exit 3'
+    if [[ "${BATS_TEST_DESCRIPTION}" == *'exits 0 ('* ]]; then
+        assert_success
+    else
+        assert_failure 1
+    fi
+}
+EOF
+    done
+    _stub just <<EOF
+printf '[ci] acceptance bats OK\n[ci] Running system-real bats (test/system/real_engine_spec.bats)\n' >&2
+bats --formatter tap '${_fixture}'
+rc=\$?
+printf '[ci] ERROR: system-real bats failed\n' >&2
+printf '%s\n' '[system-real] cleanup: containers left in the nested daemon: 0' \
+    '[system-real] stopping nested dockerd (pid 123)' \
+    '[system-real] --- dockerd log (tail): /var/log/worktool-dockerd.log' \
+    'time=2026-11-03 level=info msg=shutdown' \
+    '[system-real] --- end of dockerd log' >&2
+exit "\${rc}"
+EOF
+}
+
+@test "2.1: only busy latency failures are inconclusive, never PASS" {
+    _stub_ci_tools
+    _stub_busy_latency
+    PATH="${BIN}:${PATH}" run "${COPY_GATE}" 2.1
+    assert_failure 3
+    assert_output --partial '未判定、請在閒置時重跑'
+    refute_output --partial 'PASSED'
+    refute_output --partial 'FAILED'
+    cp "${REPO_ROOT}/script/verify/all.sh" "${COPY}/script/verify/all.sh"
+    printf '#!/usr/bin/env bash\nexit 0\n' >"${COPY}/script/verify/ui.sh"
+    chmod +x "${COPY}/script/verify/ui.sh"
+    PATH="${BIN}:${PATH}" run "${COPY}/script/verify/all.sh"
+    assert_failure 3
+    assert_line 'verify all: gate UNAVAILABLE (rc=3)'
+    refute_output --partial 'gate PASS'
+}
+
+@test "2.1: busy verdict survives stderr relayed after all stdout" {
+    _stub_ci_tools
+    _stub_busy_latency
+    local _transcript="${BATS_TEST_TMPDIR}/busy.tap" _stderr="${BATS_TEST_TMPDIR}/runner.log" _rc=0
+    "${BIN}/just" >"${_transcript}" 2>"${_stderr}" || _rc=$?
+    [[ "${_rc}" -eq 1 ]]
+    _stub just <<EOF
+cat '${_transcript}'
+cat '${_stderr}' >&2
+exit 1
+EOF
+    PATH="${BIN}:${PATH}" run "${COPY_GATE}" 2.1
+    assert_failure 3
+    assert_output --partial '未判定、請在閒置時重跑'
+    refute_output --partial 'FAILED'
+
+    _stub just <<EOF
+cat '${_stderr}' >&2
+cat '${_transcript}'
+exit 1
+EOF
+    PATH="${BIN}:${PATH}" run "${COPY_GATE}" 2.1
+    assert_failure 3
+    assert_output --partial '未判定、請在閒置時重跑'
+    refute_output --partial 'FAILED'
+}
+
+@test "2.1: mixed failures and unreliable latency evidence stay failed" {
+    _stub_ci_tools
+    _stub_busy_latency
+    local _transcript="${BATS_TEST_TMPDIR}/busy.tap" _stderr="${BATS_TEST_TMPDIR}/runner.log" _rc=0 _mode
+    "${BIN}/just" >"${_transcript}" 2>"${_stderr}" || _rc=$?
+    [[ "${_rc}" -eq 1 ]]
+    for _mode in mixed infrastructure missing-status missing-busy truncated; do
+        cp "${_transcript}" "${SYS_BLOCK}"
+        case "${_mode}" in
+            mixed)
+                sed -i 's/^1\.\.2$/1..3/' "${SYS_BLOCK}"
+                printf 'not ok 3 real engine: fish is broken\n' >>"${SYS_BLOCK}" ;;
+            infrastructure)
+                printf '[system-real] ERROR: runner cleanup failed\n' >>"${SYS_BLOCK}" ;;
+            missing-status)
+                sed -i '/^# status : 3$/d; /^# actual   : 3$/d' "${SYS_BLOCK}" ;;
+            missing-busy)
+                sed -i '/host too busy/d' "${SYS_BLOCK}" ;;
+            truncated)
+                sed -i 's/^1\.\.2$/1..3/' "${SYS_BLOCK}" ;;
+        esac
+        _stub just <<EOF
+cat '${SYS_BLOCK}'
+cat '${_stderr}' >&2
+exit 1
+EOF
+        PATH="${BIN}:${PATH}" run "${COPY_GATE}" 2.1
+        assert_failure 1
+        refute_output --partial '未判定、請在閒置時重跑'
+    done
+}
+
+@test "2.1: multiline bench diagnostics preserve the inconclusive verdict" {
+    _stub_ci_tools
+    _stub_busy_latency
+    BUSY_MULTILINE=1 PATH="${BIN}:${PATH}" run "${COPY_GATE}" 2.1
+    assert_failure 3
+    assert_output --partial '未判定、請在閒置時重跑'
+}
+
+@test "2.1: preserves stdout and stderr for passing and busy latency runs" {
+    bats_require_minimum_version 1.5.0
+    local stderr=""
+    _stub_ci_tools
+    _stub just <<'EOF'
+printf '1..1\nok 1 the gate is green\n'
+printf '[ci] system-real bats OK\n' >&2
+EOF
+    PATH="${BIN}:${PATH}" run --separate-stderr "${COPY_GATE}" 2.1
+    assert_success
+    assert_output $'1..1\nok 1 the gate is green'
+    [[ "${stderr}" == *'[ci] system-real bats OK'* ]]
+
+    _stub_busy_latency
+    PATH="${BIN}:${PATH}" run --separate-stderr "${COPY_GATE}" 2.1
+    assert_failure 3
+    assert_output --partial 'not ok 1 real engine: bench.sh'
+    refute_output --partial '[ci] ERROR:'
+    refute_output --partial '[system-real]'
+    [[ "${stderr}" == *'[ci] ERROR: system-real bats failed'* ]]
+    [[ "${stderr}" == *'[system-real] stopping nested dockerd (pid 123)'* ]]
+    [[ "${stderr}" == *'未判定、請在閒置時重跑'* ]]
+}
+
 @test "control: a just test exiting 0 passes item 2.1" {
     _stub_ci_tools
     _stub just <<'EOF'
@@ -846,6 +985,7 @@ EOF
     assert_success
     assert_output --partial 'Usage: gate.sh [ITEM...]'
     assert_output --partial '3 the check cannot run'
+    assert_output --partial 'the latency gate is inconclusive (host busy)'
 }
 
 @test "cli: an unknown option exits 2 and names the option" {
