@@ -26,7 +26,7 @@
 # start a stopped container), then --runs recorded times, in the order
 # enter, shell, inbox. --max-ms N turns the tool into a gate: exit 1 when
 # the SHELL median exceeds N ms (the user-perceived time to a prompt); the
-# other two metrics are reported, not judged. The < 300 ms target itself and
+# other two metrics are reported, not judged. The ≤ 300 ms target itself and
 # the runtime decision (runc / crun) live in issue #22, not here.
 #
 # Quiet-host precondition (issue #181, doc/adr/0003-latency-gate-inconclusive.md):

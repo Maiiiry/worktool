@@ -68,7 +68,7 @@ install script 形式)與容器框架。盒子有自己的 HOME(見 `doc/adr/000
 2. bootstrap 順序:host 裝 docker+distrobox(+ `just`,見「決策」)-> host
    install script(驅動/GUI)-> assemble 盒子 -> 設定終端自動進盒。
 3. 版本號:`2.0.0`(worktool 首個對外版本)。
-4. 效能目標:進盒 prompt 感知延遲 < 約 300ms;工具呼叫額外負擔 < 約 50-100ms。
+4. 效能目標:進盒 prompt 感知延遲 ≤ 300 ms;工具呼叫額外負擔 < 約 50-100ms。
    300 ms 這條線由系統層 real-engine gate **強制**(`just test system-real`,
    issue #23):`test/system/real_engine_spec.bats` 對 DinD 內建出的真實 dev 盒跑
    `script/box/bench.sh --box dev --runs 5 --warmup 2 --shell 'fish -c exit'
