@@ -635,18 +635,23 @@ EOF
 @test "2.1: busy verdict survives stderr relayed after all stdout" {
     _stub_ci_tools
     _stub_busy_latency
-    # Model an independently buffered stderr relay without timing assumptions.
-    local barrier="${BATS_TEST_TMPDIR}/stdout-drained"
-    mkfifo "${barrier}"
-    _stub tee <<EOF
-if [[ "\$1" == */stderr ]]; then
-    read -r token <'${barrier}'
-    "\${REAL}" "\$1"
-else
-    cat >"\$1"
-    cat "\$1"
-    printf 'drained\n' >'${barrier}'
-fi
+    local _transcript="${BATS_TEST_TMPDIR}/busy.tap" _stderr="${BATS_TEST_TMPDIR}/runner.log" _rc=0
+    "${BIN}/just" >"${_transcript}" 2>"${_stderr}" || _rc=$?
+    [[ "${_rc}" -eq 1 ]]
+    _stub just <<EOF
+cat '${_transcript}'
+cat '${_stderr}' >&2
+exit 1
+EOF
+    PATH="${BIN}:${PATH}" run "${COPY_GATE}" 2.1
+    assert_failure 3
+    assert_output --partial '未判定、請在閒置時重跑'
+    refute_output --partial 'FAILED'
+
+    _stub just <<EOF
+cat '${_stderr}' >&2
+cat '${_transcript}'
+exit 1
 EOF
     PATH="${BIN}:${PATH}" run "${COPY_GATE}" 2.1
     assert_failure 3
