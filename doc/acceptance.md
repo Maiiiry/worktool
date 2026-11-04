@@ -587,10 +587,7 @@ rc=0
       輸出類型：動態示例；編號、數量、SHA、行號與實測值不逐字比對，固定判準依本項說明。
       ```text
       ./script/verify/gate.sh "$@"
-      ./script/test/test.sh
-      [ci] ShellCheck OK
-      （required specs OK 的案例與檔案數直接由 script/test/test.sh 掃描現行 declarations）
-      ...(每層的 N 由來源掃描取得，1..N 全部 ok,各以 `[ci] <tier> bats OK` 結尾;沒有 not ok，skip 僅允許下列 unit 負載重現例外)
+      ...(stdout：每層的 N 由來源掃描取得，1..N 全部 ok;沒有 not ok，skip 僅允許下列 unit 負載重現例外)
       ok 7 real engine: distrobox enter dev -- tmux -V prints a tmux version (auto-enter prerequisite)
       ok 8 real engine: distrobox enter dev -- fish --version prints a fish version (auto-enter prerequisite)
       # bench: enter: min=91.1 median=93.8 max=102.0 ms
@@ -600,11 +597,17 @@ rc=0
       ok 9 real engine: bench.sh --box dev --runs 5 --warmup 2 --shell 'fish -c exit' --max-ms ENTER_MAX_MS exits 0 (enter-latency gate on fish) and prints the enter, shell and inbox metric lines
       # bench-gate: [ERROR] shell median 98.4 ms exceeds --max-ms 1
       ok 10 real engine: bench.sh --box dev --runs 1 --warmup 0 --shell 'fish -c exit' --max-ms 1 exits 1 with the threshold message (the gate bites on a real box)
+      ...(接著重播 stderr，以下省略其他階段的診斷)
+      ./script/test/test.sh
+      [ci] ShellCheck OK
+      （required specs OK 的案例與檔案數直接由 script/test/test.sh 掃描現行 declarations）
+      ...(各層的 `[ci] <tier> bats OK`)
       [ci] system-real bats OK
       [system-real] cleanup: containers left in the nested daemon: 0
       rc=0
       ```
-      (本項把整條 `just test` 的輸出原樣串到你的終端 —— `[ci]` 那些行是 stderr,上面一起列出。數字是你機器的實測;判準 = `just test` **自己**回 0,加上 shell median ≤ 300 且三行指標都在。自動測試只證明「盒內有 tmux + fish、進盒 + 起 fish ≤ 300 ms」;「ghostty 開窗 -> 受管 command -> 盒內 fish」整條鏈由 2.3 在 CI 內驗證,實機主觀感受由 5.2 驗)
+      (本項完整擷取整條 `just test` 的 stdout 與 stderr 後，先將 stdout 重播到 stdout，再將 stderr 重播到 stderr，各串流內的內容與順序保留；上例按重播順序列出，不代表執行當下兩串流的交錯順序。`[ci]` 與 `[system-real]` 行屬於 stderr。數字是你機器的實測;判準 = `just test` **自己**回 0,加上 shell median ≤ 300 且三行指標都在。自動測試只證明「盒內有 tmux + fish、進盒 + 起 fish ≤ 300 ms」;「ghostty 開窗 -> 受管 command -> 盒內 fish」整條鏈由 2.3 在 CI 內驗證,實機主觀感受由 5.2 驗)
+    - 依 ADR 0003，若 `just test` 回 1，且完整 system-real TAP 的所有紅燈都只來自上述兩個 bench 案例，每個紅燈都同時帶有 assertion 的 exit 3 與 bench 主機忙碌的未判定診斷，2.1 印出「延遲 gate 未判定、請在閒置時重跑」並回 3，不印 PASSED／FAILED。`just verify all` 顯示 `verify all: gate UNAVAILABLE (rc=3)`，總判決仍非通過並回 3。其他失敗、混合失敗、輸出不完整或無法可靠辨識時，一律回 1；system-real 本身仍將 bench 的 3 當紅燈，CI 不跳過 gate。2.1 分別完整擷取兩個串流，再依上述順序重播供判讀；未判定辨識不依賴 stdout 與 stderr 之間的到達順序。
     - 唯一 skip 例外：未設 `WORKTOOL_STRESS=1`（未設定或值不是 `1`）時，unit 層只允許以下三個 CPU 負載重現案例以列出的訊息 skip。除此之外，每層都不得有任何 skip；設 `WORKTOOL_STRESS=1` 時，這三個案例也不得 skip。案例名稱與訊息必須完全符合 `script/test/test.sh` 的豁免清單。
 
       | 案例名稱 | skip 訊息（TAP 後綴） |
@@ -685,11 +688,12 @@ rc=0
       # single-instance: COMMAND_FINISHED=no
       ok 15 ghostty chain: with gtk-single-instance on, a forwarded launch exits 0 while the command it asked for has not begun yet (the false positive the guard prevents)
       # chain-desktop-path: inbox-ok fish=4.2.1 ctrenv=/run/.containerenv mntns=mnt:[1234] tmux=no host=ca83e9d035cd
+      # chain-desktop-path-in-box: marker mntns=mnt:[1234] == dev container; host=ca83e9d035cd == docker inspect dev hostname
       ok 16 ghostty chain (#175): the absolute distrobox path just box setup writes enters the box from a desktop session's PATH
       rc=0
       ```
       (`host=` 是那一輪盒子的容器 id、`fish=`、`FORWARDED_DELAY_MS=` 與 `SECOND_ELAPSED=` 是實測值,每次都不一樣,不要照字面比 —— 尤其 `SECOND_ELAPSED` 是「第二次啟動花了幾秒」,測試接受的是 0-15,上面印 `1` 只是某一輪的實測(round 11:一輪量到 `0`,照字面比會無故變紅);判準是這些 `ok` 行都在、沒有 `not ok`、`FORWARDED_STARTED` / `FORWARDED_AFTER_RETURN` 是 `yes`、`COMMAND_FINISHED` 是 `no`、整段 `rc=0`。任何一層出現 `not ok`,即使該層 `just test` 回 0 也算失敗;integration 紅掉時不會再跑 system-real。hang 案例只在盒內 ready 標記出現後才接受 `timeout` 的 124,否則算「沒進到盒子」這個不同的失敗;single-instance 案例證明為什麼所有測試設定都明寫 `gtk-single-instance = false`。
-      `script/verify/gate.sh` 判的就是上面這整組,不是「有某一行對到就算數」:integration 與 system-real 的 `ok` 案例分別以 `INTEGRATION_CASES` 與 `SYSTEM_REAL_CASES` 清單為準(以案例敘述比對,不比 `ok` 後面的編號,編號會隨新增案例位移)，清單中的每個案例各出現一次、不能多也不能少;`tmux=no`、`PRIMARY=up`、`SECOND_RC=0`、`STARTED_AT_RETURN=1`、`FORWARDED_STARTED=yes`、`FORWARDED_AFTER_RETURN=yes`、`RUNNING_COMMANDS=2`、`PRIMARY_WRAPPER_ALIVE=yes`、`COMMAND_FINISHED=no` 這些判定值逐字比對,`ctrenv=` 必須是 `/run/.containerenv` 或 `/.dockerenv`，`mntns=` 必須是盒子的 mount namespace；`host=` / `fish=` / `FORWARDED_DELAY_MS=` / budget 秒數這些實測值只比形狀;`SECOND_ELAPSED=` 也是實測值,但本文件公佈了它的範圍(0-15),所以 `gate.sh` 就照 `0-15` 比 —— 只比 `[0-9]+` 的話,`SECOND_ELAPSED=999`(第二次啟動花了十六分鐘才返回,正好是本案例要否證的那件事)也會過;`# hang-ready:` 必須排在 `# hang:` 與 hang 案例之前。新增一個 ghostty 鏈案例時,這份文件的區塊與 `gate.sh` 的清單要一起改)
+      `script/verify/gate.sh` 判的就是上面這整組,不是「有某一行對到就算數」:integration 與 system-real 的 `ok` 案例分別以 `INTEGRATION_CASES` 與 `SYSTEM_REAL_CASES` 清單為準(以案例敘述比對,不比 `ok` 後面的編號,編號會隨新增案例位移)，清單中的每個案例各出現一次、不能多也不能少，只適用於 pattern 選中的 `ok` 行（含 ghostty）；其餘案例的失敗由 `^not ok` 與 tier rc 擋住;`tmux=no`、`PRIMARY=up`、`SECOND_RC=0`、`STARTED_AT_RETURN=1`、`FORWARDED_STARTED=yes`、`FORWARDED_AFTER_RETURN=yes`、`RUNNING_COMMANDS=2`、`PRIMARY_WRAPPER_ALIVE=yes`、`COMMAND_FINISHED=no` 這些判定值逐字比對,`ctrenv=` 必須是 `/run/.containerenv` 或 `/.dockerenv`，mntns 相等由 bats 案例保證，`gate.sh` 只檢查 `mntns=mnt:[數字]` 格式與字面 `== dev container`；`host=` / `fish=` / `FORWARDED_DELAY_MS=` / budget 秒數這些實測值只比形狀;`SECOND_ELAPSED=` 也是實測值,但本文件公佈了它的範圍(0-15),所以 `gate.sh` 就照 `0-15` 比 —— 只比 `[0-9]+` 的話,`SECOND_ELAPSED=999`(第二次啟動花了十六分鐘才返回,正好是本案例要否證的那件事)也會過;`# hang-ready:` 必須排在 `# hang:` 與 hang 案例之前。新增一個 ghostty 鏈案例時,這份文件的區塊與 `gate.sh` 的清單要一起改)
     - 驗收方式
       ```bash
       just verify gate 2.3; echo rc=$?

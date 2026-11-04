@@ -39,7 +39,7 @@
 #   M3 (issues #150, #23) adds the enter-latency GATE: once the box is
 #   initialised, the delivered `script/box/bench.sh` measures the real
 #   enter latency (`--box dev --runs 5 --warmup 2`) with `--max-ms
-#   ENTER_MAX_MS` (the < 300 ms target of doc/design.md, one constant
+#   ENTER_MAX_MS` (the ≤ 300 ms target of doc/design.md, one constant
 #   below); the case passes only when bench.sh exits 0, i.e. the SHELL
 #   median (the user-perceived time to a prompt: enter + shell start-up)
 #   is within the threshold. The shell metric is measured on the box's
@@ -110,7 +110,7 @@ RM_TIMEOUT=120
 QUERY_TIMEOUT=60          # short engine queries: info / ps / inspect / logs
 
 # Enter-latency gate (M3, issue #23): the SHELL median bench.sh measures on
-# the real box must not exceed this many milliseconds - the "< ~300 ms
+# the real box must not exceed this many milliseconds - the "≤ 300 ms
 # time to a prompt" performance target of doc/design.md. The number lives
 # HERE only; doc/design.md and doc/manifest.md refer to this constant.
 ENTER_MAX_MS=300

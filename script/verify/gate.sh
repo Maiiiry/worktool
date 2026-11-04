@@ -78,7 +78,7 @@
 #   0  every requested item passed
 #   1  an item failed (the reason is on stderr)
 #   2  usage error (unknown option, unknown item)
-#   3  the check cannot run here (a required tool or file is missing)
+#   3  the check is unavailable or the latency gate is inconclusive
 #
 # Expected failures are handled explicitly; checks run in conditionals so
 # their own exit codes and diagnostics decide the acceptance verdict.
@@ -116,7 +116,7 @@ TDD_PRS=(152 153 154 155 156 165 166 167 168 169)
 # run has to exercise to produce them. The pattern SELECTS the block the
 # document prints; the arrays below are what that block has to CONTAIN.
 INTEGRATION_PATTERN='^ok .*ghostty|^not ok'
-SYSTEM_REAL_PATTERN='^# (chain|chain-host|hang|single-instance)|^ok .*ghostty chain|^not ok'
+SYSTEM_REAL_PATTERN='^# (chain|hang|single-instance)|^ok .*ghostty chain|^not ok'
 
 # The `ok` cases doc/acceptance.md lists for each tier, keyed by the case
 # DESCRIPTION rather than by `ok <n>`: bats numbers shift whenever a case is
@@ -265,7 +265,8 @@ Stdout carries exactly the lines doc/acceptance.md shows as the expected
 output; progress and diagnostics go to stderr.
 
 Exit codes: 0 pass, 1 an item failed, 2 usage error, 3 the check cannot run
-here (a required tool or file is missing - never a silent skip).
+here (a required tool or file is missing - never a silent skip), or
+the latency gate is inconclusive (host busy).
 
 Environment:
   GATE_TIMEOUT     seconds allowed per `just test` run (default: 5400).
@@ -554,24 +555,35 @@ _check_tier_order() {
 
 # --- Item 2.1 ----------------------------------------------------------------
 
-# The bare `just test` run: all six tiers, in order, stop at the first
-# failure. The run streams to the caller's terminal exactly as it does when
-# typed by hand - this item adds the one judgement the document could only
-# ask for in prose, namely that `just test`'s OWN exit status is what
-# decides, not the last line it happened to print.
-_item_2_1() {
-    local _rc=0
-    verify_run "${GATE_TIMEOUT}" just test || _rc=$?
+# Accept only complete system-real TAP whose failed cases are the two
+# latency assertions with exit 3 AND bench's busy-host diagnostic.
+_only_busy_latency() {
+    awk -f "${REPO_ROOT}/lib/verify_busy_latency.awk" "$2" "$1"
+}
+
+# Capture before judging so the original command status survives TAP parsing.
+_item_2_1() (
+    local _rc=0 _dir=""
+    _make_tmpdir _dir || return 1
+    trap 'rm -rf "${_dir}"' EXIT
+    verify_run "${GATE_TIMEOUT}" just test \
+        >"${_dir}/stdout" 2>"${_dir}/stderr" || _rc=$?
+    cat "${_dir}/stdout" || return 1
+    cat "${_dir}/stderr" >&2 || return 1
     if [[ "${_rc}" -eq 124 ]]; then
         _err "\`just test\` did not finish within ${GATE_TIMEOUT}s (timeout)"
         return 1
+    fi
+    if [[ "${_rc}" -eq 1 ]] && _only_busy_latency "${_dir}/stdout" "${_dir}/stderr"; then
+        printf '[UNAVAILABLE] gate.sh: 延遲 gate 未判定、請在閒置時重跑 (ADR 0003)\n' >&2
+        return "${EXIT_UNAVAILABLE}"
     fi
     if [[ "${_rc}" -ne 0 ]]; then
         _err "\`just test\` exited ${_rc} - the seven-stage gate is not green"
         return 1
     fi
     return 0
-}
+)
 
 # --- Item 2.2 ----------------------------------------------------------------
 
@@ -840,7 +852,7 @@ _item_2_4() {
 
 # --- Dispatcher --------------------------------------------------------------
 _run_item() {
-    local _id="$1" _group _fn _title
+    local _id="$1" _group _fn _title _rc=0
     _group="$(_item_group "${_id}")" || {
         _err "internal: no group for item ${_id}"
         return 1
@@ -864,7 +876,11 @@ _run_item() {
     _info "item ${_id}: ${_title}"
     # Exits EXIT_UNAVAILABLE when the item cannot be checked here.
     "_preconditions_${_group}" "item ${_id}"
-    if ! "${_fn}"; then
+    "${_fn}" || _rc=$?
+    if [[ "${_rc}" -eq "${EXIT_UNAVAILABLE}" ]]; then
+        return "${_rc}"
+    fi
+    if [[ "${_rc}" -ne 0 ]]; then
         _err "item ${_id} FAILED"
         return 1
     fi
@@ -905,7 +921,7 @@ main() {
         || _unavailable "cannot enter the repo root ${REPO_ROOT}"
 
     for _id in "${_items[@]}"; do
-        _run_item "${_id}" || exit "${EXIT_FAIL}"
+        _run_item "${_id}" || exit $?
     done
     return 0
 }
