@@ -299,3 +299,31 @@ _check_evidence_tree() {
         rm "${copy}/doc/evidence/${path}"
     done
 }
+
+@test "#728: user config symlinks are delivered and cite preservation checks" {
+    run _section 3
+    assert_success
+    assert_output --partial "以 symlink 從 host HOME 帶進盒子 HOME"
+    assert_output --partial "test/integration/assemble_spec.bats"
+    refute_output --partial "尚未實作"
+    refute_output --partial "#199 落地時"
+    run cat "${REPO_ROOT}/doc/adr/0004-invariant-user-content.md"
+    assert_success
+    assert_output --partial "test/unit/link_spec.bats"
+    refute_output --partial "待補，由 #199 實作"
+}
+
+@test "#728: verify exit 3 is unavailable or inconclusive with verification references" {
+    run bash -c 'grep -A1 "^- \*\*永不靜默失敗" "$1"' _ "${CONTRACT}"
+    assert_success
+    assert_output --regexp "just verify.*\`3\`.*UNAVAILABLE.*未判定"
+    assert_output --partial "test/unit/verify_all_spec.bats"
+    assert_output --partial "test/unit/verify_gate_spec.bats"
+}
+
+@test "#728: latency index note cites the settled ADR 0003 decision" {
+    run _section 6
+    assert_success
+    assert_output --regexp '進盒 < 300 ms.*已.*ADR 0003'
+    refute_output --partial "待 #181 定案"
+}
