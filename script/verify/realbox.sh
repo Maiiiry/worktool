@@ -925,7 +925,13 @@ _52_find_window() {
         if [[ "${mode}" == apply ]]; then
             apply_root="$(_52_apply_window_root)" || {
                 rc=$?
-                [[ "${rc}" -ne 2 ]] || { _52_ownership_unknown; return 3; }
+                if [[ "${rc}" -eq 2 ]]; then
+                    if (( SECONDS >= _52_DEADLINE )) && [[ -n "${nonfish}" ]]; then
+                        break
+                    fi
+                    _52_ownership_unknown
+                    return 3
+                fi
                 (( SECONDS < _52_DEADLINE )) || break
                 sleep 0.1 || return 3
                 continue
