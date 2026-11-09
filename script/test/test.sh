@@ -10,8 +10,8 @@
 #                back inside a throwaway container with the /source bind
 #                mount. Selected by --lint / --unit / --matrix /
 #                --integration / --system / --acceptance / --system-real;
-#                NO option runs
-#                all of them, in that order, stopping at the first failure.
+#                NO option runs all of them, in that order, stopping at
+#                the first failure.
 #   Container  - runs the actual gate against the mounted source. Selected
 #                by --ci-lint / --ci-unit / --ci-matrix / --ci-integration /
 #                --ci-integration-ghostty / --ci-system / --ci-system-real /
