@@ -102,6 +102,7 @@ job 名稱由 `runTag`、階段名稱與腳本內遞增計數組成，不讀取�
 完整 log 留在 `.agents/state/job/<name>/log`，綠的結果尾段逐字交給發布 stage 作為測試證據。
 CI 的本機 gate 與有 timeout 的 `gh pr checks --watch` 同樣走 job；一般未帶標記的獨立驗收 session
 仍可跑 `just verify all`、`just verify realbox` 與 `just test`（長工作仍遵守 timeout 規則）。見 ADR-0015。
+resume 發布（分支已有 commit、還沒有 PR）、light 發布，以及本地 HEAD 領先遠端時的 push-check，都先跑同一種 gate stage，綠了才推送；gate 紅就停止，並在 `blockingLeft` 附上失敗摘要。push-check 的腳本只檢查狀態後推送，不再跑 gate。Claude 的 Fix 輪同樣以 job start／wait 執行 gate。沒有任何 stage 要求把 gate 當成一次前景呼叫跑完（#755）。
 只有 CI checks job 的 wait 回傳 `1` 時，前景 wrapper 會輸出 `CI_CHECK_FAILED` 並交回控制；這不代表綠燈，CI agent 必須讀取失敗 log、以 TDD 修復、推送後重看 checks，修復上限維持兩輪。start 失敗、其他非 `0`／`124` 退出碼與六次 wait 耗盡仍直接回報紅；CI 本機 gate 與修復後 gate 的失敗規則不變。
 指定既有 `branch` 與 `pr` 且實作已完成、工作區乾淨時，跳過實作與開 PR，直接進入 CI／審查迴圈；需要接續實作時仍重用指定 PR，不另開 PR。
 CI 先確認 worktree 乾淨、分支與開啟中的 PR 相符、目標是 `base`。
@@ -157,7 +158,7 @@ light 不受 `implementer` 的選擇影響，也不因 `codex: "off"` 留配額�
 
 1. 一個 Claude 子代理在獨立 worktree 直接修改並 commit，不叫 codex 實作；有行為改變時仍依 TDD 逐片 RED→GREEN。
 2. 另一個 Claude 子代理只看完整 diff，審查並套用必改，追加 commit；修改或審查未成功就停止，不發布。
-3. 阻塞執行 `just test lint` 與改到的 spec（`just test <tier> <spec> [--filter REGEX]`）；排除 CI-only 的 `test/system-real/` 與 `test/system/real_engine_spec.bats`，交由 CI 驗證，不跑 `just test changed` 或完整 tier；通過後才推送、開 PR。
+3. 審查後由獨立的 job gate stage 執行 `just test lint` 與改到的 spec（`just test <tier> <spec> [--filter REGEX]`）；排除 CI-only 的 `test/system-real/` 與 `test/system/real_engine_spec.bats`，交由 CI 驗證，不跑 `just test changed` 或完整 tier；通過後才推送、開 PR。
 4. 等 CI 全綠，失敗時在同一 worktree 修正並追加 commit、再推送；不跑 codex 複驗，也不 merge。
 
 仍遵守一個 issue 一個 PR、noreply author 與 committer、無署名、不改寫已推送 commit。

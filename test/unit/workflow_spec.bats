@@ -1993,7 +1993,7 @@ _rv_assert_fails_closed() {
     run _pl_run '{"mode":"light","codex":"off"}'
     assert_success
     run jq -cr '[.error, [.calls[].role], ([.calls[].prompt | contains("codex exec")] | any)]' <<<"${output}"
-    assert_output '[null,["prepare:b","implement:#283","review:#283:light","publish:#283","locate:b","stage-check:Implement:#7","ci:#7"],false]'
+    assert_output '[null,["prepare:b","implement:#283","review:#283:light","gates:Light","publish:#283","locate:b","stage-check:Implement:#7","ci:#7"],false]'
 }
 
 @test "milestone-fanout (node): forwards light mode to each child (#310)" {
@@ -2074,10 +2074,11 @@ _pl_stage_run() {
         run git -C "${BATS_TEST_TMPDIR}/worktree/n" rev-parse HEAD
         assert_output "${remote}"
         refute_output "${PL_BEFORE}"
-        run cat "${BATS_TEST_TMPDIR}/gates"
-        assert_output $'test lint\ntest changed'
+        # Gates run in their own job stage; the push script runs none (#755).
+        run jq -e '[.calls[].role] | index("gates:Fix-push") < index("push-check:Fix:#7")' <<<"${json}"
+        assert_success
+        assert [ ! -e "${BATS_TEST_TMPDIR}/gates" ]
         rm -rf "${BATS_TEST_TMPDIR}/worktree/n" "${BATS_TEST_TMPDIR}/remote"
-        rm "${BATS_TEST_TMPDIR}/gates"
     done
 }
 
@@ -2790,8 +2791,9 @@ _pl_resume_run() {
     json="${output}"
     run jq -e '.error == null and .result.pr == 7 and .result.codexVerdict == "mergeable" and
         ([.calls[].role | startswith("implement:")] | any | not) and
+        (.calls[] | select(.role == "gates:Resume-publish") | .prompt |
+            contains("-- just test lint`") and contains("-- just test unit test/unit/workflow_spec.bats`")) and
         (.calls[] | select(.role | startswith("publish:")) | .prompt |
-            contains("run just test lint && just test unit test/unit/workflow_spec.bats") and
             contains("git push -u origin b") and contains("--base acceptance --head b") and
             contains("Refs: #386") and contains("noreply") and contains("Body starts with [claude]"))' <<<"${json}"
     assert_success
@@ -2909,14 +2911,14 @@ _pl_resume_run() {
     assert_success
     json="${output}"
     run jq -e '.error == null and .result.codexVerdict == "mergeable" and
-        ([.calls[].role] | index("push-check:Resume:#7") < index("ci:#7"))' <<<"${json}"
+        ([.calls[].role] | index("gates:Resume-push") < index("push-check:Resume:#7") and
+            index("push-check:Resume:#7") < index("ci:#7"))' <<<"${json}"
     assert_success
     run git --git-dir="${root}/remote" rev-parse refs/heads/b
     local remote="${output}"
     run git -C "${root}/worktree/n" rev-parse HEAD
     assert_output "${remote}"
-    run cat "${root}/gates"
-    assert_output $'test lint\ntest changed'
+    assert [ ! -e "${root}/gates" ]
 }
 
 @test "pr-loop resume: unpushed CI repair blocks without publication or review (#396)" {
@@ -3816,8 +3818,8 @@ SH
     run _pl_run '{"mode":"light","codex":"off","base":"acceptance"}'
     assert_success
     json="$output"
-    jq -er '.calls[] | select(.role | startswith("review:")) | .prompt |
-        capture("Run (?<commands>just test lint.*?) blocking in the foreground after fixes"; "m").commands' \
+    jq -er '.calls[] | select(.role == "gates:Light") | .prompt |
+        [match("just job start \u0027[^\u0027]*\u0027 -- (.*?)` then"; "gm").captures[0].string] | join(" && ")' \
         <<<"$json" > "${root}/gates.sh"
     run bash -c 'cd "$1" && PATH="$1/bin:$PATH" GATE_LOG="$1/calls" bash gates.sh' _ "${root}"
     assert_success
@@ -4784,5 +4786,127 @@ _pl_pr_text_rule() {
     assert_success
     run jq -e '.calls[] | select(.role == "adoption:#7:r1") | .prompt |
         contains("PR 說明更新:") and contains("[claude] 採納第 1 輪:")' <<<"${json}"
+    assert_success
+}
+
+# Custom gates make every rendered gate list recognisable in prompts.
+PL_755_GATES='["just test lint","just test unit test/unit/x_spec.bats"]'
+
+# No prompt asks for the gate list as one foreground call.
+_pl_no_foreground_gates() {
+    jq -e '.error == null and ([.calls[].prompt |
+        test("x_spec\\.bats\\)? blocking in the foreground|Gates run BLOCKING in the foreground")] | any | not)' <<<"$1"
+}
+
+# A Claude fix round whose commit is still local when the Fix check runs.
+_pl_755_fix_run() {
+    local replies
+    replies='{"implement:":{"status":"ready","reason":""},
+        "stage-check:Implement":{"evidence":"{\"status\":\"\",\"localHead\":\"abc\",\"remoteHead\":\"abc\",\"prHead\":\"abc\",\"errors\":\"\"}"},
+        "stage-check:Fix":[{"evidence":"{\"ahead\":true,\"status\":\"\",\"localHead\":\"def\",\"remoteHead\":\"abc\",\"prHead\":\"abc\",\"errors\":\"\"}"},
+            {"evidence":"{\"status\":\"\",\"localHead\":\"def\",\"remoteHead\":\"def\",\"prHead\":\"def\",\"errors\":\"\"}"}],
+        "push-check:":{"status":"pushed"},"locate:":{"pr":7,"sha":"abc"},"ci:":{"state":"green","sha":"abc","detail":""},
+        "review:":{"verdict":"blocked","defects":["broken"],"limitations":[],"answer":"x","suggestions":[]}}'
+    local extra="${1:-}"
+    [[ -n "${extra}" ]] || extra='{}'
+    replies="$(jq -c --argjson extra "${extra}" '. + $extra' <<<"${replies}")"
+    node "${REPO_ROOT}/test/unit/fixture/workflow_run.mjs" "${PR_LOOP}" \
+        "$(jq -cn --argjson gates "${PL_755_GATES}" '{runTag:"test-run",repo:"o/r",repoDir:"/work",issue:283,branch:"b",name:"n",task:"t",implementer:"claude",maxRounds:1,gates:$gates}')" \
+        "${replies}"
+}
+
+@test "pr-loop guardrails point long gates at the job interface (#755)" {
+    local extra
+    for extra in '{}' '{"implementer":"claude"}' '{"mode":"light","codex":"off"}'; do
+        run _pl_run "${extra}"
+        assert_success
+        run jq -e '[.calls[] | select(.role | startswith("implement:")) | .prompt] | length > 0 and all(
+            (contains("Gates run BLOCKING in the foreground") | not) and contains("just job start") and
+            contains("just job wait"))' <<<"${output}"
+        assert_success
+    done
+}
+
+@test "pr-loop Claude fix round runs its gates through jobs (#755)" {
+    run _pl_755_fix_run
+    assert_success
+    local json="${output}"
+    run _pl_no_foreground_gates "${json}"
+    assert_success
+    run jq -e '.calls[] | select(.role == "fix:#7:r1") | .prompt |
+        contains("just job start") and contains("just job wait") and contains("--max-seconds 540") and
+        contains("-- just test unit test/unit/x_spec.bats`")' <<<"${json}"
+    assert_success
+}
+
+@test "pr-loop push-check pushes only after a separate gate job stage (#755)" {
+    run _pl_755_fix_run
+    assert_success
+    local json="${output}"
+    run jq -e '([.calls[].role] | index("gates:Fix-push") < index("push-check:Fix:#7")) and
+        (.calls[] | select(.role == "push-check:Fix:#7") | .prompt |
+            ([match("`(cd [^`]*git push origin[^`]*)`").captures[0].string] | length == 1 and
+             all(contains("just test") | not)))' <<<"${json}"
+    assert_success
+    run _pl_755_fix_run '{"gates:":{"state":"red","detail":"not ok 1 lint"}}'
+    assert_success
+    run jq -e '.result.codexVerdict != "mergeable" and (.result.blockingLeft | length > 0) and
+        ([.calls[].role | startswith("push-check:")] | any | not)' <<<"${output}"
+    assert_success
+}
+
+@test "pr-loop light review and publish leave gates to a job stage (#755)" {
+    run _pl_run "$(jq -cn --argjson gates "${PL_755_GATES}" '{mode:"light",codex:"off",gates:$gates}')"
+    assert_success
+    local json="${output}"
+    run _pl_no_foreground_gates "${json}"
+    assert_success
+    run jq -e '[.calls[].role] | index("review:#283:light") < index("gates:Light") and
+        index("gates:Light") < index("publish:#283")' <<<"${json}"
+    assert_success
+}
+
+@test "pr-loop light gate failure stops before publishing (#755)" {
+    run node "${REPO_ROOT}/test/unit/fixture/workflow_run.mjs" "${PR_LOOP}" \
+        '{"runTag":"test-run","repo":"o/r","repoDir":"/work","issue":283,"branch":"b","name":"n","task":"t","mode":"light"}' \
+        '{"implement:":{"status":"ready","reason":""},"review:":{"verdict":"mergeable","defects":[],"limitations":[],"suggestions":[],"answer":"ok"},"gates:":{"state":"red","detail":"not ok 1 lint"}}'
+    assert_success
+    run jq -e '.result.ciState == "none" and (.result.blockingLeft | index("not ok 1 lint") != null) and
+        ([.calls[].role | test("^(publish|ci):")] | any | not)' <<<"${output}"
+    assert_success
+}
+
+@test "pr-loop resume publish runs gates in a job stage before pushing (#755)" {
+    _pl_resume_setup
+    _pl_resume_codex_complete
+    git -C "${BATS_TEST_TMPDIR}/worktree/n" commit -qm 'feat: pending' -m 'Refs: #386' --allow-empty
+    run _pl_resume_run "$(jq -cn --argjson gates "${PL_755_GATES}" '{gates:$gates}')"
+    assert_success
+    local json="${output}"
+    run _pl_no_foreground_gates "${json}"
+    assert_success
+    run jq -e '.result.pr == 7 and ([.calls[].role] | index("gates:Resume-publish") < index("publish:#386:resume"))' <<<"${json}"
+    assert_success
+}
+
+@test "pr-loop resume publish stops on a red gate job without publishing (#755)" {
+    _pl_resume_setup
+    _pl_resume_codex_complete
+    git -C "${BATS_TEST_TMPDIR}/worktree/n" commit -qm 'feat: pending' -m 'Refs: #386' --allow-empty
+    local root="${BATS_TEST_TMPDIR}"
+    run node "${REPO_ROOT}/test/unit/fixture/workflow_run.mjs" "${PR_LOOP}" \
+        "$(jq -cn --arg d "${root}/src" '{runTag:"test-run",repo:"o/r",repoDir:$d,issue:386,branch:"b",name:"n",task:"t"}')" \
+        '{"prepare:":{"state":"<stdout>"},"gates:":{"state":"red","detail":"not ok 3 changed spec"},"publish:":{"pr":7,"sha":"abc"}}' exec-resume
+    assert_success
+    run jq -e '.error == null and .result.pr == 0 and
+        (.result.blockingLeft | map(contains("not ok 3 changed spec")) | any) and
+        ([.calls[].role | test("^(publish|ci):")] | any | not)' <<<"${output}"
+    assert_success
+}
+
+@test "pr-loop CI local test rules with custom gates use the job interface (#755)" {
+    run _pl_run "$(jq -cn --argjson gates "${PL_755_GATES}" '{gates:$gates}')"
+    assert_success
+    run _pl_no_foreground_gates "${output}"
     assert_success
 }
