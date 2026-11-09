@@ -33,7 +33,8 @@ export const meta = {
 //
 // Result: { issue, pr, sha, ciState, codexVerdict, reviewer, reviewVerdict, reviews, rounds, blockingLeft, limitations, suggestions }.
 // reviewer names who reviewed ('claude' | 'codex' | 'none'); codexVerdict is "mergeable" only after a
-// [codex] round comment is confirmed at the PR head, and "not-run" when Claude reviewed (#755).
+// [codex] round comment is confirmed at the PR head (#755); "not-run" when a Claude review ends the loop,
+// and "blocked" on any flow abort (RED record, Fix, adoption comment, CI), whoever reviewed (#769).
 // The workflow never merges: merge order and rebase conflicts stay with the
 // main loop (one PR at a time, merge commit, keep agent commits).
 
