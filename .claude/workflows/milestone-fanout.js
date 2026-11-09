@@ -56,11 +56,11 @@ const runItem = async (item) => {
         issue: item.issue, branch: item.branch, name: item.name, task: item.task, pr: item.pr, gates: item.gates,
       })
     } catch (e) {
-      result = { issue: item.issue, pr: 0, sha: '', ciState: 'error', codexVerdict: 'error', rounds: 0, blockingLeft: [String((e && e.message) || e)] }
+      result = { issue: item.issue, pr: 0, sha: '', ciState: 'error', codexVerdict: 'error', reviewer: 'none', reviewVerdict: 'error', reviews: 0, rounds: 0, blockingLeft: [String((e && e.message) || e)] }
     }
-    const summary = result ? `PR #${result.pr} ci=${result.ciState} codex=${result.codexVerdict} rounds=${result.rounds}${result.blockingLeft && result.blockingLeft.length ? ' blocking=' + result.blockingLeft.length : ''}` : 'no result'
+    const summary = result ? `PR #${result.pr} ci=${result.ciState} codex=${result.codexVerdict} reviewer=${result.reviewer || 'none'} review=${result.reviewVerdict || 'none'} reviews=${result.reviews || 0} rounds=${result.rounds}${result.blockingLeft && result.blockingLeft.length ? ' blocking=' + result.blockingLeft.length : ''}` : 'no result'
     log(`#${item.issue} done: ${summary}`)
-    return result || { issue: item.issue, pr: 0, sha: '', ciState: 'error', codexVerdict: 'error', rounds: 0, blockingLeft: ['pr-loop returned nothing'] }
+    return result || { issue: item.issue, pr: 0, sha: '', ciState: 'error', codexVerdict: 'error', reviewer: 'none', reviewVerdict: 'error', reviews: 0, rounds: 0, blockingLeft: ['pr-loop returned nothing'] }
 }
 const results = []
 for (let i = 0; i < A.items.length; i += CONCURRENCY) {

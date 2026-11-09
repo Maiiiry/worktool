@@ -164,7 +164,7 @@ light 不受 `implementer` 的選擇影響，也不因 `codex: "off"` 留配額�
 仍遵守一個 issue 一個 PR、noreply author 與 committer、無署名、不改寫已推送 commit。
 修改失敗的結構化結果須帶 `reason`（失敗步驟與原因），workflow 會把它附在 `blockingLeft`；未提供原因時明確標示。發布並 Locate 後，同樣執行下述 Implement 完成檢查。
 
-回傳沿用 full 的欄位，`codexVerdict: "skipped"`、`rounds: 0`；以 `ciState` 與 `blockingLeft` 判斷是否完成。
+回傳沿用 full 的欄位，`codexVerdict: "skipped"`、`rounds: 0`；diff 審查以 `reviewer: "claude"`、`reviewVerdict` 與 `reviews` 回報；以 `ciState` 與 `blockingLeft` 判斷是否完成。
 例如上述呼叫只需把 `mode` 改為 `"light"`，並以 `gates` 指定此次修改的 lint 與 spec 指令。
 
 ## full 迴圈內容
@@ -192,7 +192,10 @@ light 不受 `implementer` 的選擇影響，也不因 `codex: "off"` 留配額�
    Fix 輪的 commit 讓人寫的 PR 說明與實際行為不一致時，同一輪以 `gh pr edit --body-file` 更新受影響的段落，`<!-- pr-loop:auto:start -->` 到 `<!-- pr-loop:auto:end -->` 之間的機械段落原樣保留（#755）；採納留言最後一行 `PR 說明更新:` 列出改了哪些段落（沒有則寫「無」）。codex 實作的 Fix 輪由 codex 在摘要列出過時段落，採納留言 stage 確認 head 後更新。
    Fix 結束也以同一腳本確認工作區乾淨、本地 HEAD 已推送且與 PR head 相同，並要求 PR head 與修正前不同；codex 與 Claude 路徑皆適用。任一檢查失敗就回報 `blocked`，`blockingLeft` 附上 git status、修正前後 HEAD 與遠端比較，不進入下一輪 CI／審查。
    已推送的 commit 不得 rebase、amend、reset 或 force push 改寫；只追加新 commit，需要同步 main 時用 merge。
-6. 回傳 `{ issue, pr, sha, ciState, codexVerdict, rounds, blockingLeft, limitations, suggestions }`，`blockingLeft` 列出剩餘缺陷（流程失敗時保留失敗原因）。
+6. 回傳 `{ issue, pr, sha, ciState, codexVerdict, reviewer, reviewVerdict, reviews, rounds, blockingLeft, limitations, suggestions }`，`blockingLeft` 列出剩餘缺陷（流程失敗時保留失敗原因）。
+   `reviewer` 是最後一次審查的審查者（`claude`、`codex`，沒有審查時為 `none`），`reviewVerdict` 是該次審查的結論，`reviews` 是審查次數，與只計 Fix 輪數的 `rounds` 分開（#755）。
+   預設 `implementer: "codex"` 由 Claude 審查，此時 `codexVerdict` 一律是 `not-run`，呼叫者依 `reviewer` 判斷是否仍需 codex 確認。
+   codex 審查時，`[codex] 第 N 輪複驗` 留言的第一行帶上審查的 head（`[codex] 第 N 輪複驗 head <sha>`）；workflow 回報 `codexVerdict: "mergeable"` 前，以 `gh pr view --json headRefOid,comments` 確認 PR head 仍是該 sha 且留言存在，讀取失敗或找不到就回 `blocked`。
    `limitations` 與 `suggestions` 累積各輪有效審查的內容並去重，包含 Fix 後或流程失敗的回傳；
    `limitations` 提供呼叫者寫入 PR 說明的「已知限制」段落，workflow 不在此機械改寫 PR 說明。**不 merge PR**:PR 合併順序與衝突由主迴圈處理。
 
