@@ -1268,7 +1268,7 @@ rc=0
       rc=0
       ```
       (失敗時的樣子:判定是「不可合併」印 `blocked`、沒有判定行印 `NOT`、沒有 [codex] 留言印 `no-codex`、`gh` 查詢本身失敗印 `gh-failed`,配對不符上述固定表或判定鏈不成立是行尾 `BAD`,沒有 [claude] 留言印 `#N no-claude-comment`,擷取 follow-up 失敗印 `#N grep-failed`,查不到對應關係是 `#N no-follow-up` / `#N no-fix-pr`,修正 PR 編號格式錯誤印 `#N bad-fix-pr`,最後都 `rc=1`。
-      `distinct-follow-ups` / `distinct-fix-prs` 必須都是 4:四個被擋的 PR 各要有**自己的** follow-up issue 與修正 PR。這兩個計數跨整個項目累計,不是每個 PR 重新算一次 —— 只檢查每行關係自洽與唯一性仍不夠，還必須比對上述固定配對；重用同一個 issue 加同一個 PR 時，不符合固定配對的行印 `BAD`，計數也會不足 4。round 12:舊版的 `v()` 是 `gh ... | grep ... | tail -1`,結束碼來自 `tail`,所以「印得出判定行卻 exit 1 的 gh」會讓六個 PR 全部讀成 mergeable —— 現在 gh 的輸出先收進變數、先判它自己的結束碼,`gh-failed` 因此和「判定不是可合併」分得開)
+      `distinct-follow-ups` / `distinct-fix-prs` 必須都是 4:四個被擋的 PR 各要有**自己的** follow-up issue 與修正 PR。這兩個計數跨整個項目累計,不是每個 PR 重新算一次 —— 只檢查每行關係自洽與唯一性仍不夠,還必須比對上述固定配對;重用同一個 issue 加同一個 PR 時,不符合固定配對的行印 `BAD`,計數也會不足 4。round 12:舊版的 `v()` 是 `gh ... | grep ... | tail -1`,結束碼來自 `tail`,所以「印得出判定行卻 exit 1 的 gh」會讓六個 PR 全部讀成 mergeable —— 現在 gh 的輸出先收進變數、先判它自己的結束碼,`gh-failed` 因此和「判定不是可合併」分得開)
     - 驗收方式
       ```bash
       just verify evidence 6.3; echo rc=$?
