@@ -25,13 +25,15 @@ export const meta = {
 //     runTag: "issue150-attempt1",      // required: unique per new run; reuse on resume
 //     task: "...",                     // required: what to build, acceptance criteria, files, tests
 //     base: "main",                   // optional: target branch, including acceptance branches
-//     gates: ["just test lint", "..."],    // optional replacement gates; default = lint + changed
+//     gates: ["just test lint", "..."],    // optional replacement gates; default = lint + touched specs (ADR-0014)
 //     codex: "on" | "off",             // optional: default "on"; "off" = quota paused
 //     maxRounds: 3,                    // optional: number of Fix rounds allowed (0 = review once, never fix)
 //     parent: "#5",                    // optional: "Part of" reference in the PR body
 //   } })
 //
-// Result: { issue, pr, sha, ciState, codexVerdict, rounds, blockingLeft, limitations, suggestions }.
+// Result: { issue, pr, sha, ciState, codexVerdict, reviewer, reviewVerdict, reviews, rounds, blockingLeft, limitations, suggestions }.
+// reviewer names who reviewed ('claude' | 'codex' | 'none'); codexVerdict is "mergeable" only after a
+// [codex] round comment is confirmed at the PR head, and "not-run" when Claude reviewed (#755).
 // The workflow never merges: merge order and rebase conflicts stay with the
 // main loop (one PR at a time, merge commit, keep agent commits).
 
@@ -57,13 +59,12 @@ const REPO = A.repo
 const REPO_DIR = A.repoDir
 const WORKTREE_ROOT = `${REPO_DIR}/../worktree`
 const CODEX = codexArg === 'on'
-const CHANGED_GATE = BASE === 'main' ? 'just test changed' : `just test changed --base origin/${BASE}`
 const PARENT = A.parent || ''
 const WT = `${WORKTREE_ROOT}/${A.name}`
 const SCRATCH = `${WORKTREE_ROOT}/.scratch/${A.name}`
 // POSIX single quoting: how a value reaches a shell command.
 const sq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
-// Light selects touched local specs; real-engine coverage belongs to CI.
+// The default gate selects touched local specs; real-engine coverage belongs to CI (ADR-0014).
 const TOUCHED_GATE = `bash -c ${sq(`set -euo pipefail
 paths="$(git diff --name-only --diff-filter=ACMR ${sq(`origin/${BASE}`)}...HEAD && git diff --name-only --diff-filter=ACMR HEAD && git ls-files --others --exclude-standard)"
 paths="$(printf '%s\\n' "$paths" | sort -u)"
@@ -78,7 +79,7 @@ while IFS= read -r spec; do
 done <<< "$paths"`)}`
 // A string is one shell command; arrays delimit multiple commands explicitly.
 const GATE_COMMANDS = A.gates === undefined
-  ? ['just test lint', MODE === 'light' ? TOUCHED_GATE : CHANGED_GATE]
+  ? ['just test lint', TOUCHED_GATE]
   : typeof A.gates === 'string' ? [A.gates] : A.gates
 if (!Array.isArray(GATE_COMMANDS) || !GATE_COMMANDS.length ||
     GATE_COMMANDS.some(g => typeof g !== 'string' || !g.trim())) {
@@ -116,12 +117,10 @@ const validReview = (review) => review && ['defects', 'limitations', 'suggestion
 
 const LOCAL_TEST_RULES = A.gates
   ? `In the TDD loop run only the slice's spec with just test <tier> <spec> [--filter]; before pushing run ${GATES}. Never run a whole tier locally; CI runs every tier.`
-  : MODE === 'light'
-  ? `In the TDD loop run only the slice's spec with just test <tier> <spec> [--filter]; before pushing run lint and only the touched specs. Leave system-real specs (including test/system/real_engine_spec.bats) to CI. Never run just test changed or a whole tier locally; CI runs every tier.`
-  : `In the TDD loop run only the slice's spec with just test <tier> <spec> [--filter]; before pushing run just test lint and ${CHANGED_GATE}. Never run a whole tier locally; CI runs every tier.`
+  : `In the TDD loop run only the slice's spec with just test <tier> <spec> [--filter]; before pushing run lint and only the touched specs. Leave system-real specs (including test/system/real_engine_spec.bats) to CI. Never run just test changed or a whole tier locally; CI runs every tier.`
 const PUSH_HISTORY_RULES = `Never rewrite pushed commits: no rebase, amend, reset, or force push of pushed history. The only exception is the commit-email remedy from #234: rewrite pushed commits only to fix a non-noreply author, then push with --force-with-lease. Only add new commits; sync with ${BASE} by merging.`
 const COMMON_GUARDRAILS = `
-Repo: ${REPO_DIR} (branch main is protected: ci-passed required, merge only via PR). Work ONLY inside ${WT}; never touch another checkout or worktree. Rules: one issue = one PR, one thing; TDD (tests FIRST, show RED then GREEN in your report); tests run ONLY in Docker via the just interface (${GATES}) - never bats on the host, never install anything on the host. ${LOCAL_TEST_RULES} ${PUSH_HISTORY_RULES} Commits/code/comments English; issue/PR/docs zh-TW; NO emoji; no new "# shellcheck disable"; functions < 50 lines; every user action goes through just (thin forwarder recipe; the SCRIPT owns --help/validation, parses the whole command line before serving help, "unknown option '<x>' (see --help)" exit 2 - copy script/box/assemble.sh + script/box/justfile.box). All gh calls pass --repo ${REPO}. Gates run BLOCKING in the foreground (no Monitor/background). Review notes, round evidence and coordination notes go to PR comments or the gitignored .agents/state/. Never commit these notes into the repo. doc/evidence/ is only for acceptance evidence. Never merge a PR. End the final paragraph of every commit message with Refs: #${A.issue}. For multiple issues, use one Refs: #<issue> line per issue.`
+Repo: ${REPO_DIR} (branch main is protected: ci-passed required, merge only via PR). Work ONLY inside ${WT}; never touch another checkout or worktree. Rules: one issue = one PR, one thing; TDD (tests FIRST, show RED then GREEN in your report); tests run ONLY in Docker via the just interface (${GATES}) - never bats on the host, never install anything on the host. ${LOCAL_TEST_RULES} ${PUSH_HISTORY_RULES} Commits/code/comments English; issue/PR/docs zh-TW; NO emoji; no new "# shellcheck disable"; functions < 50 lines; every user action goes through just (thin forwarder recipe; the SCRIPT owns --help/validation, parses the whole command line before serving help, "unknown option '<x>' (see --help)" exit 2 - copy script/box/assemble.sh + script/box/justfile.box). All gh calls pass --repo ${REPO}. Long gates run only through the job interface (just job start, then foreground just job wait --max-seconds 540 calls) in the stage that owns them; never as one long foreground call, never with Monitor or background tool calls. Review notes, round evidence and coordination notes go to PR comments or the gitignored .agents/state/. Never commit these notes into the repo. doc/evidence/ is only for acceptance evidence. Never merge a PR. End the final paragraph of every commit message with Refs: #${A.issue}. For multiple issues, use one Refs: #<issue> line per issue.`
 const SKILL_LOAD = {
   claude: 'Before planning or editing, use the Skill tool to load the tdd skill first and follow it.',
   codex: 'Before planning or editing, read .agents/skills/tdd/SKILL.md first and follow it.',
@@ -132,6 +131,8 @@ const GUARDRAILS = `${COMMON_GUARDRAILS} Commit with a GitHub noreply author and
 const CODEX_RULES = `${COMMON_GUARDRAILS.replace(LOCAL_TEST_RULES, 'Run only slice specs and just test lint. In the TDD loop run only the slice\'s spec with just test <tier> <spec> [--filter]. Never run a whole tier locally; CI runs every tier. Do not run long gates or any waits, including job.sh wait.').replace(`(${GATES})`, '(slice specs and lint)')} Commit with a GitHub noreply author and committer. Add no attribution or session trailer lines. PR bodies and comments you create start with "[codex]".`
 const RULES = GUARDRAILS
 
+// Fix rounds keep human-written PR text in step with the pushed behaviour (#755).
+const PR_TEXT_RULES = (pr) => `When commits make the human-written PR description disagree with the actual behaviour, update the affected human-written sections in the same round: write the whole body to a literal file and run gh pr edit ${pr} --repo ${REPO} --body-file <literal path>, copying any machine section between <!-- pr-loop:auto:start --> and <!-- pr-loop:auto:end --> unchanged. Leave no stale prose outside that machine section.`
 const RED_PUBLICATION_RULES = `Copy the actual ## RED section (exact just test command and failing TAP lines) verbatim from ${WT}/.agents/state/red-evidence.md or the implementer report at ${IMPLEMENT_OUT} into the PR description or a new PR comment with your own agent prefix. Never substitute GREEN gate tails or fabricate evidence. For no-behaviour changes only, copy ## RED exemption and its Reason: <explanation> into the PR description (a comment cannot grant an exemption). If evidence or a justified exemption is unavailable, stop and report blocked.`
 
 const IMPLEMENT_TASK = `${A.pr ? `Reuse PR #${A.pr}; push updates to it instead of opening another PR. The PR creation instructions below apply only when no PR exists.\n` : ''}TASK (issue #${A.issue}): ${A.task}
@@ -186,10 +187,8 @@ ${CODEX_IMPLEMENT_BRIEF}`
 const LOCATE = `Resolve the open PR for branch ${A.branch} in ${REPO}: run \`gh pr list --repo ${REPO} --head ${A.branch} --base ${BASE} --state open --json number,headRefOid --jq '.[0]'\`. Return pr (integer) and sha (the headRefOid). If there is no such PR, return pr 0 and sha "".`
 
 const CI_LOCAL_TEST_RULES = A.gates
-  ? `Before pushing run ${GATES} blocking in the foreground. Never run a whole tier locally; CI runs every tier.`
-  : MODE === 'light'
-  ? 'Locally run only just test lint and touched specs with just test <tier> <spec> [--filter]. Leave system-real specs (including test/system/real_engine_spec.bats) to CI. Never run just test changed or a whole tier locally; CI runs every tier.'
-  : 'Locally run only just test lint and changed unit specs with just test unit <spec...> [--filter REGEX]. Never run matrix, integration, system, system-real, acceptance or a whole unit tier locally; those tiers are verified by CI (ci-passed).'
+  ? `Before pushing run ${GATES} only through the job interface below. Never run a whole tier locally; CI runs every tier.`
+  : 'Locally run only just test lint and touched specs with just test <tier> <spec> [--filter]. Leave system-real specs (including test/system/real_engine_spec.bats) to CI. Never run just test changed or a whole tier locally; CI runs every tier.'
 
 // The gate agent has no implementer context and returns only compact results.
 let jobCounter = 0
@@ -210,7 +209,7 @@ const gateStage = (stage) => agent(`${jobInstructions(`pr-loop-${A.issue}-${stag
 })
 const publishCodex = (stage, pr, evidence) => agent(`${GUARDRAILS}
 In ${WT}, gates already passed in the separate job stage. Verify a clean worktree, branch ${A.branch}, and every unpublished commit for noreply author/committer, Refs: #${A.issue}, and no attribution trailers. Push with git push -u origin ${A.branch}; ${pr ? `reuse PR #${pr}` : `locate an existing PR first, or create one with gh pr create --repo ${REPO} --base ${BASE} --head ${A.branch} --title "<zh-TW title ending with (#${A.issue})>" --body-file <file>`}.
-Do not edit the existing PR description when reusing a PR. Draft a PR body only when creating a new PR.
+${PR_TEXT_RULES(pr || '<pr>')} Draft a whole new PR body only when creating a new PR.
 ${RED_PUBLICATION_RULES}
 Gate evidence, copied verbatim:\n${evidence}\nPR body starts with [claude], includes Closes #${A.issue}${PARENT ? `, Part of ${PARENT}` : ''}, ## 這個 PR 只做一件事, ## commit, ## 測試證據 (verbatim compact gate results), codex:本 PR 開啟後由 workflow 跑複驗,結果附於留言. Never merge. Return the PR number and head SHA.`, {
   label: `${RUN_ID} publish:${stage}`, phase: 'Publish', effort: 'low', schema: LOCATE_SCHEMA, agentType: 'general-purpose',
@@ -243,11 +242,11 @@ Return ready only when codex exits successfully and its repair is committed; oth
 
 const CI = (pr) => `Watch CI for PR #${pr} of ${REPO} against base ${BASE}. Before watching a resumed PR, verify its headRefName equals ${A.branch}, its state is OPEN and baseRefName equals ${BASE}; lookup failure or mismatch is red. In ${WT}, require a clean working tree on ${A.branch}; fetch origin, and if local HEAD is ahead of the remote branch, run local gates through jobs (${jobInstructions(`ci-local-${A.issue}`, GATE_COMMANDS)}), verify noreply author/committer and Refs: #${A.issue} on every unpublished commit, then push without rewriting history. If remote is ahead, sync by merging and run the same gates through fresh jobs before pushing; divergence or any failed guard must be resolved safely or return red. Never watch a stale head. First run \`gh pr view ${pr} --repo ${REPO} --json baseRefName --jq .baseRefName\`; on lookup failure or base mismatch, return state "red" with the failure reason and do not judge CI green. Then collect CI through the same job interface: ${jobInstructions(`ci-${A.issue}`, [`timeout 1800 gh pr checks ${pr} --repo ${REPO} --watch --fail-fast`], true)} Use a fresh job name on each retry. If every check passes, return state "green". Do not add workflow infrastructure (job modules or hooks) to the PR branch; missing infrastructure must return red and be repaired on the base by synchronizing main. If a check fails: read it (\`gh run view <run-id> --repo ${REPO} --log-failed\`), fix it in the existing worktree ${WT} (branch ${A.branch}) with TDD. ${CI_LOCAL_TEST_RULES} Run required local gates with ${jobInstructions(`ci-repair-${A.issue}`, GATE_COMMANDS)}. Continue and these rules (${RULES}), commit (independent commit, English), push, watch again (max 2 rounds); then return state "green" or "red". Always return sha = current head of the branch (\`git -C ${WT} rev-parse HEAD\`) and detail = the check list or the failure reason. Never merge.`
 
-const CODEX_STEP = (pr, round, prior) => `Run ONE codex re-verification of PR #${pr} (${REPO}, issue #${A.issue}), round ${round}, against base ${BASE} (diff equivalent to git diff origin/${BASE}...HEAD). First run gh pr view ${pr} --repo ${REPO} --json baseRefName --jq .baseRefName and verify it is ${BASE}; lookup failure or mismatch is blocking. Rules: never write a [codex] line yourself - only paste codex's actual output; zh-TW; no emoji; gh with --repo ${REPO}. Work dir: mkdir -p ${SCRATCH} && cd ${SCRATCH}.
+const CODEX_STEP = (pr, round, prior, head) => `Run ONE codex re-verification of PR #${pr} (${REPO}, issue #${A.issue}), round ${round}, against base ${BASE} (diff equivalent to git diff origin/${BASE}...HEAD). First run gh pr view ${pr} --repo ${REPO} --json baseRefName --jq .baseRefName and verify it is ${BASE}; lookup failure or mismatch is blocking. Rules: never write a [codex] line yourself - only paste codex's actual output; zh-TW; no emoji; gh with --repo ${REPO}. Work dir: mkdir -p ${SCRATCH} && cd ${SCRATCH}.
 1. Context: \`gh pr view ${pr} --repo ${REPO} --json title,body --jq '"# " + .title + "\\n\\n" + .body' > ctx-r${round}.md\`; \`gh issue view ${A.issue} --repo ${REPO} --json title,body --jq '"# issue #${A.issue} " + .title + "\\n\\n" + .body' >> ctx-r${round}.md\`; \`gh pr diff ${pr} --repo ${REPO} > pr.diff\`; the issue's scope section, cut by the shell (never retyped), as ONE command whose exit status you check: \`gh issue view ${A.issue} --repo ${REPO} --json body --jq .body > issue-r${round}.md && tr -d '\\r' < issue-r${round}.md | awk '/^## 範圍/{f=1;print;next} f&&/^## /{exit} f' > scope-r${round}.md && { [ -s scope-r${round}.md ] || printf '%s\\n' 'issue 未定範圍:issue 本文沒有「## 範圍」段,依一般標準判定,並在改善建議註記「issue 未定範圍」。' > scope-r${round}.md; }\`. If it exits non-zero (gh failed: network, auth, API), retry once after 60 s; still non-zero -> never write the 未定範圍 note yourself and do not run codex: post a [claude] comment "讀取 issue #${A.issue} 失敗,本輪未完成" and return defects ["讀取 issue #${A.issue} 失敗"], limitations [], suggestions [], and an empty answer.
 2. Prompt file: write the text below to draft-r${round}.txt with the line @@SCOPE@@ kept as is, then paste scope-r${round}.md into it verbatim: \`awk -v f=scope-r${round}.md '$0 == "@@SCOPE@@" { while ((getline l < f) > 0) print l; next } 1' draft-r${round}.txt > prompt-r${round}.txt\` (zh-TW): "你是 codex。stdin 前半是 PR 描述與對應 issue,後半是完整 diff(以 '=== DIFF ===' 分隔)。本 issue 的「## 範圍」段(擋 / 不擋 / 已知限制)逐字如下:\n@@SCOPE@@\n若上方是範圍段,只有落在上述範圍內的具體問題才可列為阻擋項(須指出 diff 位置與具體失敗情境);範圍外的環境或效能風險列為限制，其他改善列為建議。${prior ? `這是第 ${round} 輪:你上一輪的判定逐字如下,請逐項確認是否已修正:\n${prior}\n` : ''}${TDD_REVIEW_RULES} ${REVIEW_CLASSIFICATION} 請靜態逐項確認:(1) 只做一件事且對應 issue 的驗收標準;(2) TDD 證據(RED/GREEN);(3) 自足(不引用不存在的檔案/旗標/recipe);(4) 正確性與健壯性(邊界、錯誤處理、shell 引號、測試能否抓到回歸);(5) 文件與實作一致;(6) 新引入的問題。缺陷列在「## 缺陷」、限制列在「## 已知限制」、建議列在「## 改善建議」標題下，每項引用 diff 位置。"
 3. \`{ cat ctx-r${round}.md; printf '\\n=== DIFF ===\\n'; cat pr.diff; } | WORKTOOL_AGENT_ROLE=pr-loop timeout 420 codex exec --skip-git-repo-check "$(cat prompt-r${round}.txt)" > out-r${round}.txt 2>&1\` as ONE foreground Bash call with the Bash tool timeout at its maximum (600000 ms). ${LAUNCH_FORBIDDEN} Then extract the answer (lines after the line that is exactly "codex", minus trailing "tokens used" lines, local working-directory paths rewritten repo-relative) in the foreground: \`cd ${sq(SCRATCH)} && awk '/^codex$/{f=1;next} f' out-r${round}.txt | sed '/^tokens used/,$d' | ${RELPATHS} > answer-r${round}.md\`; answer = the content of answer-r${round}.md. Empty output or an auth/quota error -> retry once after 60 s; still empty -> post a [claude] comment "codex 無輸出(配額/認證),本輪未完成" and return verdict "no-output" with an empty answer.
-4. Post ONE PR comment through a body file: "[codex] 第 ${round} 輪複驗" + the verbatim answer copied by the shell (\`cat answer-r${round}.md\`; never the raw out-r${round}.txt, never retyped), blank line, "[claude] double-check: <did the prompt have full context; does every item cite a diff location>", and "可重現:\`gh pr diff ${pr} --repo ${REPO} | WORKTOOL_AGENT_ROLE=pr-loop codex exec --skip-git-repo-check \\"$(cat prompt-r${round}.txt)\\"\`".
+4. Post ONE PR comment through a body file: first line exactly "[codex] 第 ${round} 輪複驗 head ${head}", then the verbatim answer copied by the shell (\`cat answer-r${round}.md\`; never the raw out-r${round}.txt, never retyped), blank line, "[claude] double-check: <did the prompt have full context; does every item cite a diff location>", and "可重現:\`gh pr diff ${pr} --repo ${REPO} | WORKTOOL_AGENT_ROLE=pr-loop codex exec --skip-git-repo-check \\"$(cat prompt-r${round}.txt)\\"\`".
 5. Return defects = items under 「## 缺陷」, limitations = items under 「## 已知限制」, suggestions = items under 「## 改善建議」 (one string each); answer = the verbatim answer. Empty or unparseable output must return an empty answer, never a successful review.`
 
 const CLAUDE_REVIEW = (pr, round, prior) => `${GUARDRAILS}
@@ -261,14 +260,14 @@ ${SKILL_LOAD.claude}
 ${TDD_IMPLEMENT_RULES}
 Fix review round ${round} findings on PR #${pr} (${REPO}) in the existing worktree ${WT} (branch ${A.branch}; run \`git status\` first, then merge the remote branch if it moved). Blocking items to address (each one, TDD: add the failing test FIRST, show RED, then fix, GREEN):
 ${blocking.map((b, i) => `${i + 1}. ${b}`).join('\n')}
-Run the gates (${GATES}) blocking in the foreground; commit ONE independent commit (English, "fix(...): ... (codex round ${round})"); push. Do not edit the existing PR description or post an adoption comment; the workflow publishes that comment after verifying the pushed head. A fix round is complete only after its commits are pushed and remote HEAD equals local HEAD; verify with git ls-remote before reporting. Do NOT merge. Return the pushed commit SHA and a one-line-per-item summary.`
+Commit ONE independent commit (English, "fix(...): ... (codex round ${round})"). Then run the gates through jobs: ${jobInstructions(`fix-${A.issue}-r${round}`, GATE_COMMANDS)} Push only when every gate wait exited 0. ${PR_TEXT_RULES(pr)} Do not post an adoption comment; the workflow publishes that comment after verifying the pushed head. A fix round is complete only after its commits are pushed and remote HEAD equals local HEAD; verify with git ls-remote before reporting. Do NOT merge. Return the pushed commit SHA and a one-line-per-item summary.`
 
 const CODEX_FIX_BRIEF = (pr, round, blocking) => `${CODEX_RULES}
 ${SKILL_LOAD.codex}
 ${TDD_IMPLEMENT_RULES}
 Fix review round ${round} findings on PR #${pr} (${REPO}) in the existing worktree ${WT} (branch ${A.branch}; run \`git status\` first, then merge the remote branch if it moved). Blocking items to address (each one, TDD: add the failing test FIRST, show RED, then fix, GREEN):
 ${blocking.map((b, i) => `${i + 1}. ${b}`).join('\n')}
-Do not edit the existing PR description. Run only slice specs and just test lint; commit each complete fix with Refs: #${A.issue}. Do not push or open a PR; the workflow owns long gates and publication. Return the commit SHA and a summary for the workflow publication comment starting with "[claude] 採納第 ${round} 輪:".`
+Do not edit the PR yourself; in your summary name every human-written PR description section your commits made stale, so the workflow updates it. Run only slice specs and just test lint; commit each complete fix with Refs: #${A.issue}. Do not push or open a PR; the workflow owns long gates and publication. Return the commit SHA and a summary for the workflow publication comment starting with "[claude] 採納第 ${round} 輪:".`
 
 const CODEX_FIX = (pr, round, blocking) => `Your job is to run codex as the implementer for a fix round, wait for it, and verify its result. Do not fix the task yourself.
 
@@ -282,7 +281,13 @@ ${CODEX_FIX_BRIEF(pr, round, blocking)}`
 
 const NOCODEX = (pr) => `Post ONE comment on PR #${pr} (${REPO}) with exactly: "[claude] codex 暫停中(配額),待配額恢復後補複驗。" Then return "noted".`
 
-const reviewFindings = { limitations: [], suggestions: [] }
+// Review identity rides along every result; collectReview merges only the finding lists.
+const reviewFindings = { limitations: [], suggestions: [], reviewer: 'none', reviewVerdict: 'none', reviews: 0 }
+const noteReview = (reviewer, review) => {
+  reviewFindings.reviewer = reviewer
+  reviewFindings.reviews += 1
+  reviewFindings.reviewVerdict = !validReview(review) ? 'no-output' : review.defects.length ? 'blocked' : 'mergeable'
+}
 const collectReview = (review) => {
   if (!validReview(review)) return false
   for (const key of ['limitations', 'suggestions']) {
@@ -298,17 +303,29 @@ const pushAhead = async (pr, stage) => {
   [ "$(git branch --show-current)" = ${sq(A.branch)} ] &&
   git fetch origin ${sq(A.branch)} >&2 &&
   git merge-base --is-ancestor FETCH_HEAD HEAD`
-  const gates = `${GATE_COMMANDS.join(' && ')} &&`
+  const gates = await gateStage(`${stage}-push`)
+  if (!gates || gates.state !== 'green') return { status: 'failed' }
   return agent(`${IMPLEMENTER === 'codex' ? CODEX_RULES : GUARDRAILS}
-Local HEAD is ahead. Run ${GATES} blocking in the foreground before pushing. Verify every unpublished commit has noreply author/committer, Refs: #${A.issue}, and no attribution trailers before running the script. Any failed gate or guard is blocking. Never force push or rewrite history. Run this script only after all gates pass:
-\`cd ${sq(WT)} && ${guards} &&
-${gates}
-${guards} && git push origin ${sq(A.branch)} >&2\`
+Local HEAD is ahead and its gates already passed in the separate job stage. Verify every unpublished commit has noreply author/committer, Refs: #${A.issue}, and no attribution trailers before running the script. Any failed guard is blocking. Never force push or rewrite history. Run this script blocking in the foreground:
+\`cd ${sq(WT)} && ${guards} && git push origin ${sq(A.branch)} >&2\`
 Return status pushed only if the script succeeds; otherwise failed.`, {
     label: `${RUN_ID} push-check:${stage}:#${pr}`,
     schema: { type: 'object', properties: { status: { type: 'string', enum: ['pushed', 'failed'] } }, required: ['status'] },
     agentType: 'general-purpose',
   })
+}
+
+// A codex mergeable needs its posted round comment on the reviewed head (#755).
+const confirmCodexComment = async (pr, round, head) => {
+  const query = `{head: .headRefOid, found: ([.comments[] | select(.body | startswith(${JSON.stringify(`[codex] 第 ${round} 輪複驗 head ${head}`)}))] | length > 0)}`
+  const fetched = await agent(`Run \`gh pr view ${pr} --repo ${REPO} --json headRefOid,comments --jq ${sq(query)}\` blocking in the foreground. Return stdout verbatim as evidence; on command failure return an empty evidence string. Never infer the result.`, {
+    label: `${RUN_ID} codex-comment:#${pr}:r${round}`, phase: 'Codex', effort: 'low', agentType: 'general-purpose',
+    schema: { type: 'object', properties: { evidence: { type: 'string' } }, required: ['evidence'] },
+  })
+  try {
+    const data = JSON.parse(fetched.evidence)
+    return data.head === head && data.found === true
+  } catch { return false }
 }
 
 // Select one compact qualifying section before transporting GitHub data.
@@ -482,7 +499,7 @@ const reviewLight = async () => {
   return agent(`${GUARDRAILS}
 ${SKILL_LOAD.claude}
 ${TDD_REVIEW_RULES}
-You are a separate Claude reviewer, not the editor. Review only the complete diff in ${WT}: git diff origin/${BASE}...HEAD and any uncommitted diff. Do not run codex or a full-context review. Apply all required fixes in this worktree with TDD for behaviour changes; append independent commits without rewriting pushed history. Run ${GATES} blocking in the foreground after fixes. Do not push or open a PR. ${REVIEW_CLASSIFICATION} Return remaining required fixes or failed gates in defects.`, { label: `${RUN_ID} review:#${A.issue}:light`, phase: 'Review', schema: CODEX_SCHEMA, agentType: 'general-purpose' })
+You are a separate Claude reviewer, not the editor. Review only the complete diff in ${WT}: git diff origin/${BASE}...HEAD and any uncommitted diff. Do not run codex or a full-context review. Apply all required fixes in this worktree with TDD for behaviour changes; append independent commits without rewriting pushed history. Do not run long gates; the workflow runs them in a job stage after this review. Do not push or open a PR. ${REVIEW_CLASSIFICATION} Return remaining required fixes in defects.`, { label: `${RUN_ID} review:#${A.issue}:light`, phase: 'Review', schema: CODEX_SCHEMA, agentType: 'general-purpose' })
 }
 
 // Light finishes editing and independent diff review before publishing.
@@ -498,11 +515,14 @@ TASK (issue #${A.issue}): ${A.task}
 For behaviour changes use TDD; mechanical edits without new behaviour need no new tests. Commit each completed slice with noreply author and committer and no attribution. Do not push or open a PR yet. Leave the worktree for independent review. Report commits and RED/GREEN evidence. Return status ready only after every slice is committed; otherwise failed. Always include reason: on failure name the step and explain why it failed; on success use an empty string.`, { label: `${RUN_ID} implement:#${A.issue}`, phase: 'Implement', schema: { type: 'object', properties: { status: { type: 'string', enum: ['ready', 'failed'] }, reason: { type: 'string' } }, required: ['status', 'reason'] }, agentType: 'general-purpose' })
   if (!edited || edited.status !== 'ready') return result({ pr: 0, sha: '', ciState: 'none', codexVerdict: 'skipped', rounds: 0, blockingLeft: [`light editing did not complete: ${(edited && edited.reason) || 'editor returned no failure reason'}`] })
   const reviewed = await reviewLight()
+  noteReview('claude', reviewed)
   if (!collectReview(reviewed) || reviewed.defects.length > 0) return result({ pr: 0, sha: '', ciState: 'none', codexVerdict: 'skipped', rounds: 0, blockingLeft: (reviewed && reviewed.defects && reviewed.defects.length) ? reviewed.defects : ['light diff review did not pass'] })
   phase('Publish')
+  const lightGates = await gateStage('Light')
+  if (!lightGates || lightGates.state !== 'green') return result({ pr: 0, sha: '', ciState: 'none', codexVerdict: 'skipped', rounds: 0, blockingLeft: [(lightGates && lightGates.detail) || 'gate stage returned no result'] })
   await agent(`${GUARDRAILS}
 ${RED_PUBLICATION_RULES}
-In ${WT}, run ${GATES} blocking in the foreground. ${A.pr ? `Reuse PR #${A.pr}; push updates instead of creating another PR. Ignore the creation command below for this existing PR.` : ''} Only when green, push with git push -u origin ${A.branch} and open one PR with gh pr create --repo ${REPO} --base ${BASE} --head ${A.branch} --title "<zh-TW title ending with (#${A.issue})>" --body-file <file>. Body: Closes #${A.issue}${PARENT ? `, Part of ${PARENT}` : ''}, ## 這個 PR 只做一件事, ## commit, ## 測試證據 with verbatim gate tails, and light:兩個不同 Claude 子代理已完成修改與 diff 審查,不跑 codex 複驗. Start the body with [claude]. No attribution footer. Never merge.`, { label: `${RUN_ID} publish:#${A.issue}`, phase: 'Publish', agentType: 'general-purpose' })
+In ${WT}, gates already passed in the separate job stage. Gate evidence, copied verbatim:\n${lightGates.detail}\n${A.pr ? `Reuse PR #${A.pr}; push updates instead of creating another PR. Ignore the creation command below for this existing PR.` : ''} Only when green, push with git push -u origin ${A.branch} and open one PR with gh pr create --repo ${REPO} --base ${BASE} --head ${A.branch} --title "<zh-TW title ending with (#${A.issue})>" --body-file <file>. Body: Closes #${A.issue}${PARENT ? `, Part of ${PARENT}` : ''}, ## 這個 PR 只做一件事, ## commit, ## 測試證據 with verbatim gate tails, and light:兩個不同 Claude 子代理已完成修改與 diff 審查,不跑 codex 複驗. Start the body with [claude]. No attribution footer. Never merge.`, { label: `${RUN_ID} publish:#${A.issue}`, phase: 'Publish', agentType: 'general-purpose' })
   phase('Locate')
   const loc = await agent(LOCATE, { label: `${RUN_ID} locate:${A.branch}`, phase: 'Locate', schema: LOCATE_SCHEMA, agentType: 'general-purpose' })
   if (!loc || !loc.pr) return result({ pr: 0, sha: '', ciState: 'none', codexVerdict: 'skipped', rounds: 0, blockingLeft: ['no PR was opened for the branch'] })
@@ -545,15 +565,18 @@ if (!RESUME) {
 
 if (RESUME && MODE === 'light') {
   const reviewed = await reviewLight()
+  noteReview('claude', reviewed)
   if (!collectReview(reviewed) || reviewed.defects.length > 0) return result({ pr: A.pr || 0, sha: '', ciState: 'none', codexVerdict: 'skipped', rounds: 0, blockingLeft: (reviewed && reviewed.defects && reviewed.defects.length) ? reviewed.defects : ['light diff review did not pass'] })
 }
 
 let resumedPR
 if (RESUME && !A.pr) {
   phase('Publish')
+  const resumeGates = await gateStage('Resume-publish')
+  if (!resumeGates || resumeGates.state !== 'green') return result({ pr: 0, sha: '', ciState: 'none', codexVerdict: 'blocked', rounds: 0, blockingLeft: [`resume gates failed: ${(resumeGates && resumeGates.detail) || 'gate stage returned no result'}`] })
   resumedPR = await agent(`${GUARDRAILS}
 Resume the committed work in ${WT} on ${A.branch}; skip implementation. Require a clean worktree and inspect git log. Locate an existing open PR by branch and base ${BASE} first; reuse it rather than opening a duplicate. If none exists, require unpublished commits (compare origin/${A.branch}..HEAD, or origin/${BASE}..HEAD when the remote branch is absent). No unpublished commits or any lookup failure is blocking; return pr 0, sha "" without pushing.
-Before publishing, run ${GATES} blocking in the foreground. Check every unpublished commit for noreply author/committer, Refs: #${A.issue}, and no attribution trailers. Only when green, git push -u origin ${A.branch}; then gh pr create --repo ${REPO} --base ${BASE} --head ${A.branch} --title "<zh-TW title ending with (#${A.issue})>" --body-file <file>.
+Gates already passed in the separate job stage. Gate evidence, copied verbatim:\n${resumeGates.detail}\nCheck every unpublished commit for noreply author/committer, Refs: #${A.issue}, and no attribution trailers. Only when green, git push -u origin ${A.branch}; then gh pr create --repo ${REPO} --base ${BASE} --head ${A.branch} --title "<zh-TW title ending with (#${A.issue})>" --body-file <file>.
 ${RED_PUBLICATION_RULES}
 Body starts with [claude] and includes Closes #${A.issue}${PARENT ? `, Part of ${PARENT}` : ''}, ## 這個 PR 只做一件事, ## commit, ## 測試證據 with verbatim gate tails, and ${MODE === 'light' ? 'light:接續既有修改,獨立 Claude diff 審查已完成,不跑 codex 複驗' : CODEX ? 'codex:本 PR 開啟後由 workflow 跑複驗,結果附於留言' : 'codex:暫停中(配額),待配額恢復後補複驗'}. Return the PR number and head SHA using structured gh output. Do not merge.`, { label: `${RUN_ID} publish:#${A.issue}:resume`, phase: 'Publish', schema: LOCATE_SCHEMA, agentType: 'general-purpose' })
 }
@@ -589,7 +612,8 @@ for (;;) {
   const redRecord = await checkRedRecord(pr)
   if (redRecord !== 'present') return result({ pr, sha, ciState: 'green', codexVerdict: 'blocked', rounds: fixes, blockingLeft: [redRecord === 'unreadable' ? '無法讀取 PR RED 紀錄；重試一次仍失敗，請排除讀取錯誤後重跑' : 'PR 缺少 RED 紀錄；請補上實際指令與失敗 TAP 輸出後重跑'] })
   const reviewByClaude = IMPLEMENTER === 'codex'
-  const c = await agent(reviewByClaude ? CLAUDE_REVIEW(pr, fixes + 1, prior) : CODEX_STEP(pr, fixes + 1, prior), { label: `${RUN_ID} review:#${pr}:r${fixes + 1}`, phase: 'Codex', schema: CODEX_SCHEMA, agentType: 'general-purpose' })
+  const c = await agent(reviewByClaude ? CLAUDE_REVIEW(pr, fixes + 1, prior) : CODEX_STEP(pr, fixes + 1, prior, sha), { label: `${RUN_ID} review:#${pr}:r${fixes + 1}`, phase: 'Codex', schema: CODEX_SCHEMA, agentType: 'general-purpose' })
+  noteReview(reviewByClaude ? 'claude' : 'codex', c)
   if (!collectReview(c)) { verdict = 'no-output'; blocking = ['review returned missing or malformed findings']; break }
   blocking = c.defects
   verdict = blocking.length ? 'blocked' : 'mergeable'
@@ -608,7 +632,7 @@ for (;;) {
   const checked = await checkStage(pr, 'Fix', sha)
   if (!checked.ok) return result({ pr, sha: checked.sha || sha, ciState: 'green', codexVerdict: 'blocked', rounds: fixes, blockingLeft: [checked.detail].concat(blocking) })
   const adoption = await agent(`${GUARDRAILS}
-Do not edit the existing PR description. Post ONE comment starting with "[claude] 採納第 ${fixes} 輪:" on PR #${pr}, listing the resolution and commit for each finding below. Inspect the committed diff in ${WT}; require PR head ${checked.sha} before posting.
+Post ONE comment starting with "[claude] 採納第 ${fixes} 輪:" on PR #${pr}, listing the resolution and commit for each finding below. Inspect the committed diff in ${WT}; require PR head ${checked.sha} before posting. Compare the PR description with that diff first. ${PR_TEXT_RULES(pr)} End the comment with one line "PR 說明更新:<updated section headings, or 無>".
 ${blocking.map((b, i) => `${i + 1}. ${b}`).join('\n')}
 Use gh pr comment ${pr} --repo ${REPO} --body-file <literal path>. Then read the posted comment back and verify its body, prefix and head. Return posted true only after this verification; on any failure return false.`, {
     label: `${RUN_ID} adoption:#${pr}:r${fixes}`, phase: 'Fix',
@@ -618,6 +642,11 @@ Use gh pr comment ${pr} --repo ${REPO} --body-file <literal path>. Then read the
   ci = await agent(CI(pr), { label: `${RUN_ID} ci:#${pr}:r${fixes}`, phase: 'CI', effort: 'low', schema: CI_SCHEMA, agentType: 'general-purpose' })
   if (!ci || ci.state !== 'green') return result({ pr, sha: (ci && ci.sha) || sha, ciState: 'red', codexVerdict: 'blocked', rounds: fixes, blockingLeft: [(ci && ci.detail) || 'CI red after fix round'].concat(blocking) })
   sha = ci.sha || sha
+}
+// Only a confirmed codex comment may report codexVerdict mergeable; a Claude review never fills it.
+if (reviewFindings.reviewer !== 'codex') return result({ pr, sha, ciState: 'green', codexVerdict: 'not-run', rounds: fixes, blockingLeft: verdict === 'mergeable' ? [] : blocking })
+if (verdict === 'mergeable' && !(await confirmCodexComment(pr, fixes + 1, sha))) {
+  return result({ pr, sha, ciState: 'green', codexVerdict: 'blocked', rounds: fixes, blockingLeft: [`PR #${pr} 在 head ${sha} 找不到「[codex] 第 ${fixes + 1} 輪複驗」留言`] })
 }
 return result({ pr, sha, ciState: 'green', codexVerdict: verdict, rounds: fixes, blockingLeft: verdict === 'mergeable' ? [] : blocking })
 
@@ -630,6 +659,6 @@ return result({ pr, sha, ciState: 'green', codexVerdict: verdict, rounds: fixes,
 //   "name": "impl283",
 //   "task": "依 issue #283 的範圍與驗收實作。",
 //   "implementer": "codex",
-//   "gates": ["just test lint", "just test changed"],
+//   "gates": ["just test lint", "just test unit test/unit/workflow_spec.bats"],
 //   "maxRounds": 3
 // }
