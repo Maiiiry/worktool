@@ -204,6 +204,7 @@ _preconditions_ui() {
     _require_tool grep "${_item}"
     _require_tool sort "${_item}"
     _require_tool wc "${_item}"
+    _require_tool mktemp "${_item}"
     [[ -f "${REPO_ROOT}/justfile" ]] \
         || _unavailable "no justfile at ${REPO_ROOT} - ${_item} cannot be checked here"
 }

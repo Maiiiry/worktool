@@ -507,6 +507,19 @@ EOF
     refute_output --partial 'five-usages'
 }
 
+@test "unavailable: a missing mktemp is reported and exits 3, never read as a failed check" {
+    local _stripped="${BATS_TEST_TMPDIR}/nomktemp"
+    mkdir -p "${_stripped}"
+    local _tool
+    for _tool in bash just timeout grep sort wc; do
+        ln -sf "$(command -v "${_tool}")" "${_stripped}/${_tool}"
+    done
+    PATH="${_stripped}" run "${UI_SH}" 1.1
+    assert_failure 3
+    assert_line '[UNAVAILABLE] ui.sh: mktemp not found on PATH'
+    refute_output --partial 'five-usages'
+}
+
 # --- CLI contract ------------------------------------------------------------
 
 @test "cli: --help exits 0 and documents the exit codes" {
