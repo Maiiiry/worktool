@@ -4130,7 +4130,7 @@ STUB
     chmod +x "${STUBS}/sleep"
 }
 
-@test "#663: late sweep escalation shares the documented five-second bound" {
+@test "#663: late sweep escalation respects the shared four-second deadline" {
     _auto_window_tools
     local delay=0
     if [[ "${WORKTOOL_STRESS:-}" == 1 ]]; then delay=3.2; fi
@@ -4197,7 +4197,7 @@ STUB
     [ -f "$(_backup_dir)/manifest" ]
 }
 
-@test "#700: apply ownership probing across the deadline is undetermined before any final wrapper probe" {
+_712_deadline_tools() {
     _auto_window_tools
     _control_window_clock
     _realbox_quiet 5.2.1
@@ -4220,27 +4220,183 @@ STUB
 set -euo pipefail
 if [[ "$*" == '-p 4242 -o comm=' ]]; then
     touch "${FAKE_STATE_DIR}/deadline-inspected"
-    printf 'sh\n'
+    printf '%s\n' "${FAKE_WINDOW_COMM:-sh}"
     exit 0
 fi
 exec "${FAKE_STATE_DIR}/exited-ps" "$@"
 STUB
+}
+
+@test "#712: stable bash survives an apply-root deadline and gets the final non-fish verdict" {
+    _712_deadline_tools
     local probe_rc
     for probe_rc in 0 137; do
         printf '0\n' >"${STATE}/clock"
         rm -f "${STATE}/deadline-inspected" "${STATE}/closed"
-        FAKE_WINDOW_COMM=sh FAKE_DEADLINE_RC="${probe_rc}" \
+        FAKE_WINDOW_COMM=bash FAKE_DEADLINE_RC="${probe_rc}" \
             run "${REALBOX}" --allow-real-box 5.2.2 </dev/null
-        assert_failure 3
-        assert_output --partial 'window ownership undetermined; acceptance inconclusive'
-        [ ! -e "${STATE}/deadline-inspected" ]
-        refute_output --partial 'Ghostty new shell timed out'
-        refute_output --partial 'is not fish'
-        [ -f "$(_backup_dir)/manifest" ]
+        assert_failure 1
+        assert_output --partial '[FAIL] PID 4242 is not fish'
+        refute_output --partial 'window ownership undetermined'
+        [ -e "${STATE}/deadline-inspected" ]
         assert_equal "$(cat "${STATE}/closed")" '-HUP -- -4240'
         _realbox_quiet 5.2.3
         _realbox_quiet 5.2.1
     done
+}
+
+@test "#712: apply-root deadline without a candidate stays undetermined" {
+    _712_deadline_tools
+    cp "${STUBS}/readlink" "${STATE}/no-candidate-readlink"
+    cat >"${STUBS}/readlink" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$*" != /proc/4242/cwd ]] || exit 1
+exec "${FAKE_STATE_DIR}/no-candidate-readlink" "$@"
+STUB
+    FAKE_WINDOW_COMM=bash FAKE_DEADLINE_RC=0 \
+        run "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+    assert_failure 3
+    assert_output --partial 'window ownership undetermined; acceptance inconclusive'
+    [ ! -e "${STATE}/deadline-inspected" ]
+}
+
+_712_session_tools() {
+    _auto_window_tools
+    _control_window_clock
+    _realbox_quiet 5.2.1
+    cat >"${STUBS}/kill" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"${FAKE_STATE_DIR}/closed"
+if [[ -f "${FAKE_STATE_DIR}/window-directory" ]]; then
+    cp "${FAKE_STATE_DIR}/window-directory" "${FAKE_STATE_DIR}/closed-directory"
+    rm "${FAKE_STATE_DIR}/window-directory"
+fi
+STUB
+}
+
+@test "#712: a vanished leader with live group or session members keeps evidence" {
+    _712_session_tools
+    local mode directory
+    for mode in group session; do
+        rm -f "${STATE}/closed"
+        FAKE_SESSION_CHECK="${mode}" run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+        assert_failure 1
+        [[ "${stderr}" == *'owned window session 4240 still has live members'* ]]
+        directory="$(cat "${STATE}/closed-directory")"
+        [ -f "${directory}/before" ]
+        _assert_52_kept_evidence_stderr "${directory}"
+        assert_equal "$(cat "${STATE}/closed")" $'-HUP -- -4240\n-TERM -- -4240\n-KILL -- -4240'
+        rm -rf -- "${directory}"
+        rm "${STATE}/closed"
+        _realbox_quiet 5.2.3
+        _realbox_quiet 5.2.1
+    done
+}
+
+@test "#712: a leader gone before the first signal still requires an empty session" {
+    _712_session_tools
+    cp "${STUBS}/ps" "${STATE}/gone-root-ps"
+    cat >"${STUBS}/ps" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == '-p 4240 -o pgid=,sid=' && -f "${FAKE_STATE_DIR}/window-directory" ]]; then
+    cp "${FAKE_STATE_DIR}/window-directory" "${FAKE_STATE_DIR}/closed-directory"
+    rm "${FAKE_STATE_DIR}/window-directory"
+fi
+exec "${FAKE_STATE_DIR}/gone-root-ps" "$@"
+STUB
+    FAKE_SESSION_CHECK=group run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+    assert_failure 1
+    [[ "${stderr}" == *'owned window session 4240 still has live members'* ]]
+    local directory
+    directory="$(cat "${STATE}/closed-directory")"
+    [ -f "${directory}/before" ]
+    _assert_52_kept_evidence_stderr "${directory}"
+}
+
+@test "#712: an undetermined session probe after leader exit keeps evidence" {
+    _712_session_tools
+    local mode directory
+    for mode in failure timeout empty-output malformed late-malformed deadline; do
+        FAKE_SESSION_CHECK="${mode}" run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+        assert_failure 1
+        [[ "${stderr}" == *'cannot determine owned window session 4240'* ]]
+        directory="$(cat "${STATE}/closed-directory")"
+        [ -f "${directory}/before" ]
+        _assert_52_kept_evidence_stderr "${directory}"
+        rm -rf -- "${directory}"
+        _realbox_quiet 5.2.3
+        _realbox_quiet 5.2.1
+    done
+}
+
+@test "#712: a member-free session after leader exit removes its directory" {
+    _712_session_tools
+    run "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+    assert_success
+    [ ! -d "$(cat "${STATE}/closed-directory")" ]
+}
+
+_712_gone_before_cleanup_tools() {
+    _712_session_tools
+    cp "${STUBS}/readlink" "${STATE}/confirmed-readlink"
+    cat >"${STUBS}/readlink" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == /proc/4242/ns/mnt ]]; then
+    touch "${FAKE_STATE_DIR}/window-confirmed"
+fi
+exec "${FAKE_STATE_DIR}/confirmed-readlink" "$@"
+STUB
+    cp "${STUBS}/ps" "${STATE}/first-cleanup-ps"
+    cat >"${STUBS}/ps" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == '-e -o pid=,ppid=,comm=' && -f "${FAKE_STATE_DIR}/window-confirmed" ]]; then
+    if [[ -f "${FAKE_STATE_DIR}/window-directory" ]]; then
+        cp "${FAKE_STATE_DIR}/window-directory" "${FAKE_STATE_DIR}/closed-directory"
+        rm "${FAKE_STATE_DIR}/window-directory"
+    fi
+    printf '1 0 init\n900 1 ghostty\n4241 1 worker\n'
+    exit 0
+fi
+exec "${FAKE_STATE_DIR}/first-cleanup-ps" "$@"
+STUB
+}
+
+@test "#712: G confirmed root absent from first cleanup snapshot with live members keeps evidence" {
+    _712_gone_before_cleanup_tools
+    FAKE_SESSION_CHECK=group run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+    assert_failure 1
+    [[ "${stderr}" == *'owned window session 4240 still has live members'* ]]
+    local directory
+    directory="$(cat "${STATE}/closed-directory")"
+    [ -f "${directory}/before" ]
+    _assert_52_kept_evidence_stderr "${directory}"
+    assert_equal "$(cat "${STATE}/closed")" $'-HUP -- -4240\n-TERM -- -4240\n-KILL -- -4240'
+}
+
+@test "#712: H confirmed root absent from first cleanup snapshot with empty session removes directory" {
+    _712_gone_before_cleanup_tools
+    run "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+    assert_success
+    [ -f "${STATE}/window-confirmed" ]
+    [ ! -d "$(cat "${STATE}/closed-directory")" ]
+    [ ! -f "${STATE}/closed" ]
+}
+
+@test "#712: I confirmed root absent from first cleanup snapshot with failed session probe keeps evidence" {
+    _712_gone_before_cleanup_tools
+    FAKE_SESSION_CHECK=failure run --separate-stderr "${REALBOX}" --allow-real-box 5.2.2 </dev/null
+    assert_failure 1
+    [[ "${stderr}" == *'cannot determine owned window session 4240'* ]]
+    local directory
+    directory="$(cat "${STATE}/closed-directory")"
+    [ -f "${directory}/before" ]
+    _assert_52_kept_evidence_stderr "${directory}"
+    [ ! -f "${STATE}/closed" ]
 }
 
 @test "#663: a non-fish wrapper seen once keeps its deadline probe after later sweeps lose it" {
