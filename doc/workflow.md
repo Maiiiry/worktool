@@ -188,6 +188,7 @@ light 不受 `implementer` 的選擇影響，也不因 `codex: "off"` 留配額�
    workflow 只在有效審查的 `defects` 為空時判定 `mergeable`，忽略 reviewer 的 `verdict`；無輸出、分類欄位缺漏或格式錯誤回報 `no-output`，停止且不修正。
 5. **Fix**:`defects` 非空時（即使 reviewer 寫 `mergeable`），直接在同一次 workflow 進入既有 Fix 迴圈，不必重開或手動設定 `implement.rc`；agent 在同一 worktree 針對每個缺陷先補失敗測試再修,獨立 commit,
    push,PR 留言 `[claude] 採納第 N 輪:`;回到 CI -> Codex;最多 `maxRounds` 輪。
+   Fix 輪的 commit 讓人寫的 PR 說明與實際行為不一致時，同一輪以 `gh pr edit --body-file` 更新受影響的段落，`<!-- pr-loop:auto:start -->` 到 `<!-- pr-loop:auto:end -->` 之間的機械段落原樣保留（#755）；採納留言最後一行 `PR 說明更新:` 列出改了哪些段落（沒有則寫「無」）。codex 實作的 Fix 輪由 codex 在摘要列出過時段落，採納留言 stage 確認 head 後更新。
    Fix 結束也以同一腳本確認工作區乾淨、本地 HEAD 已推送且與 PR head 相同，並要求 PR head 與修正前不同；codex 與 Claude 路徑皆適用。任一檢查失敗就回報 `blocked`，`blockingLeft` 附上 git status、修正前後 HEAD 與遠端比較，不進入下一輪 CI／審查。
    已推送的 commit 不得 rebase、amend、reset 或 force push 改寫；只追加新 commit，需要同步 main 時用 merge。
 6. 回傳 `{ issue, pr, sha, ciState, codexVerdict, rounds, blockingLeft, limitations, suggestions }`，`blockingLeft` 列出剩餘缺陷（流程失敗時保留失敗原因）。

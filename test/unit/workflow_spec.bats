@@ -3753,11 +3753,11 @@ JS
     assert_success
 }
 
-@test "pr-loop publishes a verified adoption comment without replacing the PR body (#552)" {
+@test "pr-loop publishes a verified adoption comment and updates only stale PR sections (#552)" {
     run _pl_blocked_run codex
     assert_success
     run jq -e '.calls[] | select(.role == "adoption:#7:r1") | .prompt |
-        contains("Do not edit the existing PR description") and
+        contains("update the affected human-written sections") and
         contains("[claude] 採納第 1 輪:") and contains("gh pr comment 7 --repo o/r --body-file") and
         contains("read the posted comment back")' <<<"${output}"
     assert_success
@@ -4742,4 +4742,47 @@ Reason: 僅修正文句，沒有行為變更。'; do
             (.result.report.checks | map(select(.name == "ci-passed")) | length == 2)' <<<"${output}"
         assert_success
     done
+}
+
+# The shared PR text rule names the update command and keeps the machine section.
+_pl_pr_text_rule() {
+    jq -e --arg role "$1" '[.calls[] | select(.role | startswith($role)) | .prompt] | length > 0 and all(
+        (contains("Do not edit the existing PR description") | not) and
+        contains("update the affected human-written sections") and contains("gh pr edit") and
+        contains("--body-file") and contains("<!-- pr-loop:auto:start -->") and
+        contains("<!-- pr-loop:auto:end -->"))' <<<"$2"
+}
+
+@test "pr-loop publish lets a reused PR update stale human-written sections (#755)" {
+    run _pl_run
+    assert_success
+    run _pl_pr_text_rule "publish:" "${output}"
+    assert_success
+}
+
+@test "pr-loop Claude fix round updates stale human-written PR sections (#755)" {
+    run _pl_blocked_run claude
+    assert_success
+    run _pl_pr_text_rule "fix:" "${output}"
+    assert_success
+}
+
+@test "pr-loop codex fix brief reports stale PR sections instead of banning updates (#755)" {
+    run _pl_blocked_run codex
+    assert_success
+    run jq -e '.calls[] | select(.role == "fix:#7:r1") | .prompt | split("brief:\n")[1] |
+        (contains("Do not edit the existing PR description") | not) and
+        contains("name every human-written PR description section")' <<<"${output}"
+    assert_success
+}
+
+@test "pr-loop adoption stage updates stale PR sections and lists them in the comment (#755)" {
+    run _pl_blocked_run codex
+    assert_success
+    local json="${output}"
+    run _pl_pr_text_rule "adoption:" "${json}"
+    assert_success
+    run jq -e '.calls[] | select(.role == "adoption:#7:r1") | .prompt |
+        contains("PR 說明更新:") and contains("[claude] 採納第 1 輪:")' <<<"${json}"
+    assert_success
 }

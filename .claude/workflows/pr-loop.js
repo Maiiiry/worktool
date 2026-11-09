@@ -132,6 +132,8 @@ const GUARDRAILS = `${COMMON_GUARDRAILS} Commit with a GitHub noreply author and
 const CODEX_RULES = `${COMMON_GUARDRAILS.replace(LOCAL_TEST_RULES, 'Run only slice specs and just test lint. In the TDD loop run only the slice\'s spec with just test <tier> <spec> [--filter]. Never run a whole tier locally; CI runs every tier. Do not run long gates or any waits, including job.sh wait.').replace(`(${GATES})`, '(slice specs and lint)')} Commit with a GitHub noreply author and committer. Add no attribution or session trailer lines. PR bodies and comments you create start with "[codex]".`
 const RULES = GUARDRAILS
 
+// Fix rounds keep human-written PR text in step with the pushed behaviour (#755).
+const PR_TEXT_RULES = (pr) => `When commits make the human-written PR description disagree with the actual behaviour, update the affected human-written sections in the same round: write the whole body to a literal file and run gh pr edit ${pr} --repo ${REPO} --body-file <literal path>, copying any machine section between <!-- pr-loop:auto:start --> and <!-- pr-loop:auto:end --> unchanged. Leave no stale prose outside that machine section.`
 const RED_PUBLICATION_RULES = `Copy the actual ## RED section (exact just test command and failing TAP lines) verbatim from ${WT}/.agents/state/red-evidence.md or the implementer report at ${IMPLEMENT_OUT} into the PR description or a new PR comment with your own agent prefix. Never substitute GREEN gate tails or fabricate evidence. For no-behaviour changes only, copy ## RED exemption and its Reason: <explanation> into the PR description (a comment cannot grant an exemption). If evidence or a justified exemption is unavailable, stop and report blocked.`
 
 const IMPLEMENT_TASK = `${A.pr ? `Reuse PR #${A.pr}; push updates to it instead of opening another PR. The PR creation instructions below apply only when no PR exists.\n` : ''}TASK (issue #${A.issue}): ${A.task}
@@ -210,7 +212,7 @@ const gateStage = (stage) => agent(`${jobInstructions(`pr-loop-${A.issue}-${stag
 })
 const publishCodex = (stage, pr, evidence) => agent(`${GUARDRAILS}
 In ${WT}, gates already passed in the separate job stage. Verify a clean worktree, branch ${A.branch}, and every unpublished commit for noreply author/committer, Refs: #${A.issue}, and no attribution trailers. Push with git push -u origin ${A.branch}; ${pr ? `reuse PR #${pr}` : `locate an existing PR first, or create one with gh pr create --repo ${REPO} --base ${BASE} --head ${A.branch} --title "<zh-TW title ending with (#${A.issue})>" --body-file <file>`}.
-Do not edit the existing PR description when reusing a PR. Draft a PR body only when creating a new PR.
+${PR_TEXT_RULES(pr || '<pr>')} Draft a whole new PR body only when creating a new PR.
 ${RED_PUBLICATION_RULES}
 Gate evidence, copied verbatim:\n${evidence}\nPR body starts with [claude], includes Closes #${A.issue}${PARENT ? `, Part of ${PARENT}` : ''}, ## 這個 PR 只做一件事, ## commit, ## 測試證據 (verbatim compact gate results), codex:本 PR 開啟後由 workflow 跑複驗,結果附於留言. Never merge. Return the PR number and head SHA.`, {
   label: `${RUN_ID} publish:${stage}`, phase: 'Publish', effort: 'low', schema: LOCATE_SCHEMA, agentType: 'general-purpose',
@@ -261,14 +263,14 @@ ${SKILL_LOAD.claude}
 ${TDD_IMPLEMENT_RULES}
 Fix review round ${round} findings on PR #${pr} (${REPO}) in the existing worktree ${WT} (branch ${A.branch}; run \`git status\` first, then merge the remote branch if it moved). Blocking items to address (each one, TDD: add the failing test FIRST, show RED, then fix, GREEN):
 ${blocking.map((b, i) => `${i + 1}. ${b}`).join('\n')}
-Run the gates (${GATES}) blocking in the foreground; commit ONE independent commit (English, "fix(...): ... (codex round ${round})"); push. Do not edit the existing PR description or post an adoption comment; the workflow publishes that comment after verifying the pushed head. A fix round is complete only after its commits are pushed and remote HEAD equals local HEAD; verify with git ls-remote before reporting. Do NOT merge. Return the pushed commit SHA and a one-line-per-item summary.`
+Run the gates (${GATES}) blocking in the foreground; commit ONE independent commit (English, "fix(...): ... (codex round ${round})"); push. ${PR_TEXT_RULES(pr)} Do not post an adoption comment; the workflow publishes that comment after verifying the pushed head. A fix round is complete only after its commits are pushed and remote HEAD equals local HEAD; verify with git ls-remote before reporting. Do NOT merge. Return the pushed commit SHA and a one-line-per-item summary.`
 
 const CODEX_FIX_BRIEF = (pr, round, blocking) => `${CODEX_RULES}
 ${SKILL_LOAD.codex}
 ${TDD_IMPLEMENT_RULES}
 Fix review round ${round} findings on PR #${pr} (${REPO}) in the existing worktree ${WT} (branch ${A.branch}; run \`git status\` first, then merge the remote branch if it moved). Blocking items to address (each one, TDD: add the failing test FIRST, show RED, then fix, GREEN):
 ${blocking.map((b, i) => `${i + 1}. ${b}`).join('\n')}
-Do not edit the existing PR description. Run only slice specs and just test lint; commit each complete fix with Refs: #${A.issue}. Do not push or open a PR; the workflow owns long gates and publication. Return the commit SHA and a summary for the workflow publication comment starting with "[claude] 採納第 ${round} 輪:".`
+Do not edit the PR yourself; in your summary name every human-written PR description section your commits made stale, so the workflow updates it. Run only slice specs and just test lint; commit each complete fix with Refs: #${A.issue}. Do not push or open a PR; the workflow owns long gates and publication. Return the commit SHA and a summary for the workflow publication comment starting with "[claude] 採納第 ${round} 輪:".`
 
 const CODEX_FIX = (pr, round, blocking) => `Your job is to run codex as the implementer for a fix round, wait for it, and verify its result. Do not fix the task yourself.
 
@@ -608,7 +610,7 @@ for (;;) {
   const checked = await checkStage(pr, 'Fix', sha)
   if (!checked.ok) return result({ pr, sha: checked.sha || sha, ciState: 'green', codexVerdict: 'blocked', rounds: fixes, blockingLeft: [checked.detail].concat(blocking) })
   const adoption = await agent(`${GUARDRAILS}
-Do not edit the existing PR description. Post ONE comment starting with "[claude] 採納第 ${fixes} 輪:" on PR #${pr}, listing the resolution and commit for each finding below. Inspect the committed diff in ${WT}; require PR head ${checked.sha} before posting.
+Post ONE comment starting with "[claude] 採納第 ${fixes} 輪:" on PR #${pr}, listing the resolution and commit for each finding below. Inspect the committed diff in ${WT}; require PR head ${checked.sha} before posting. Compare the PR description with that diff first. ${PR_TEXT_RULES(pr)} End the comment with one line "PR 說明更新:<updated section headings, or 無>".
 ${blocking.map((b, i) => `${i + 1}. ${b}`).join('\n')}
 Use gh pr comment ${pr} --repo ${REPO} --body-file <literal path>. Then read the posted comment back and verify its body, prefix and head. Return posted true only after this verification; on any failure return false.`, {
     label: `${RUN_ID} adoption:#${pr}:r${fixes}`, phase: 'Fix',
