@@ -186,6 +186,7 @@ STUB
 }
 
 @test "5.4: comment tags reach every child unchanged and stay absent when omitted" {
+    _matrix_response_clock
     cat >"${MATRIX_STATE}/bin/setsid" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -213,6 +214,7 @@ STUB
 }
 
 @test "5.4: all six event-driven interrupts pass with nonzero interrupted assemble" {
+    _matrix_response_clock
     run --separate-stderr "${REALBOX}" --allow-real-box 5.4
     assert_success
     local phase signal code line actual='' expected=''
@@ -241,6 +243,7 @@ STUB
 }
 
 @test "#602: a busy-host bench cell is inconclusive and never passes the matrix" {
+    _matrix_response_clock
     MATRIX_BENCH_EXIT_CELL=bench-INT MATRIX_BENCH_RC=3 \
         run "${REALBOX}" --allow-real-box 5.4
     printf '%s\n' "${output}"
@@ -258,6 +261,7 @@ STUB
 }
 
 @test "#602: a real bench failure after an inconclusive cell still fails the matrix" {
+    _matrix_response_clock
     sed -i "/elif \[\[ \"\${phase}\" == bench \]\]; then/a\\
     if [[ \"\${TMPDIR}/\" == */bench-TERM/* ]]; then exit 1; fi" "${MATRIX_STATE}/bin/just"
     MATRIX_BENCH_EXIT_CELL=bench-INT MATRIX_BENCH_RC=3 \
@@ -273,6 +277,7 @@ STUB
 }
 
 @test "#602: an inconclusive child cannot hide missing cleanup evidence" {
+    _matrix_response_clock
     sed -i "/^_51_cleanup() {/a\\
     if [[ \"\${TMPDIR}/\" == */bench-INT/* ]]; then return 0; fi" "${REALBOX}"
     MATRIX_BENCH_EXIT_CELL=bench-INT MATRIX_BENCH_RC=3 \
@@ -340,6 +345,7 @@ STUB
 }
 
 @test "#601: bench observed immediately before signalling refuses the assemble signal" {
+    _matrix_response_clock
     sed -i '/^_54_now_ms() {/a\
     if [[ -s "${MATRIX_STATE}/boxes" ]]; then\
         printf "phase=bench\\n" >>"${_54_W}/assemble-INT/capture"\
@@ -353,6 +359,7 @@ STUB
 }
 
 @test "#601: a bench transition at signal delivery fails with an unknown signal phase" {
+    _matrix_response_clock
     cat >>"${MATRIX_STATE}/repo/lib/realbox_interrupt.sh" <<'STUB'
 
 # Inject the transition at delivery, after the last observer check.
@@ -374,6 +381,7 @@ STUB
 }
 
 @test "5.4: any cell cleanup failure fails the matrix" {
+    _matrix_response_clock
     cat >"${MATRIX_STATE}/bin/distrobox" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -410,11 +418,18 @@ _copy_matrix_repo() {
 
 @test "5.4: a copy without signal forwarding turns the interrupt cell red" {
     _copy_matrix_repo
+    _matrix_response_clock
     local stop_call="verify_stop_group \"\${monitor}\" \"\${signal}\" || rc=1"
     grep -qF -- "${stop_call}" "${MATRIX_STATE}/repo/lib/verify_run.sh"
     sed -i "s/verify_stop_group \"\${monitor}\" \"\${signal}\" || rc=1/if [[ \"\${TMPDIR}\" != *\"\${FORWARDING_DEGRADE_CELL}\"* ]]; then verify_stop_group \"\${monitor}\" \"\${signal}\" || rc=1; fi/" "${MATRIX_STATE}/repo/lib/verify_run.sh"
     run grep -qF -- "    ${stop_call}" "${MATRIX_STATE}/repo/lib/verify_run.sh"
     assert_failure 1
+    # Stress mode slows every interrupted child's cleanup past the unit deadline.
+    local delay=0
+    if [[ "${WORKTOOL_STRESS:-}" == 1 ]]; then delay=3.5; fi
+    export MATRIX_CLEANUP_DELAY="${delay}"
+    sed -i "/^_51_cleanup() {/a\\    if [[ \"\${MATRIX_CLEANUP_DELAY}\" != 0 ]]; then sleep \"\${MATRIX_CLEANUP_DELAY}\"; fi" "${REALBOX}"
+    printf '# 5.4 forwarding: injected cleanup delay=%s s per cell\n' "${MATRIX_CLEANUP_DELAY}" >&3
     local phase signal
     for phase in assemble bench; do
         for signal in INT TERM HUP; do
@@ -426,12 +441,58 @@ _copy_matrix_repo() {
             assert_line --partial "interrupt ${phase} ${signal}: FAIL ("
             assert_line 'interrupt-matrix: FAIL'
             refute_output --partial 'interrupt-matrix: PASS'
+            # The degraded cell is red for its unforwarded signal, not for time.
+            assert_line --partial 'verify_run: group stop unconfirmed'
+            refute_output --partial 'interrupt response deadline exceeded'
         done
     done
+    # Healthy cleanup, however slow, never advances the response clock.
+    assert_equal "$(cat "${MATRIX_STATE}/clock")" 0
+}
+
+# Replace Bash's clock only inside the copy's interrupt response wait
+# (_54_wait). Observation and reap deadlines keep real time; the response
+# clock moves only when a fixture ticks it, never during healthy cleanup.
+_matrix_response_clock() {
+    local lib="${MATRIX_STATE}/repo/lib/realbox_interrupt.sh" clock_expression
+    printf '0\n' >"${MATRIX_STATE}/clock"
+    clock_expression="\$(<\"\${MATRIX_STATE}/clock\")"
+    sed -i "/^_54_wait() {/,/^}/ s|SECONDS|${clock_expression}|g" "${lib}"
+    run grep -cF -- "${clock_expression}" "${lib}"
+    assert_output 2
+}
+
+@test "5.4: a child outliving the interrupt response deadline fails its cell" {
+    _matrix_response_clock
+    # The first cell's cleanup advances logical time until it is stopped;
+    # ticking continuously trips the deadline wherever the wait computed it.
+    cat >"${MATRIX_STATE}/stall" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+fallback=$((SECONDS + 10))
+while ((SECONDS < fallback)); do
+    read -r now <"${MATRIX_STATE}/clock"
+    printf '%s\n' "$((now + 1))" >"${MATRIX_STATE}/clock.next"
+    mv -f -- "${MATRIX_STATE}/clock.next" "${MATRIX_STATE}/clock"
+    sleep 0.05
+done
+printf 'matrix stall fallback deadline exceeded\n' >&2
+exit 1
+STUB
+    sed -i "/^_51_cleanup() {/a\\    if [[ \"\${TMPDIR}\" == */assemble-INT* ]]; then bash \"\${MATRIX_STATE}/stall\"; fi" "${REALBOX}"
+    run "${REALBOX}" --allow-real-box 5.4
+    assert_failure 1
+    assert_line --partial 'interrupt response deadline exceeded; stopping owned session'
+    assert_line --partial 'interrupt assemble INT: FAIL (rc='
+    assert_line 'interrupt-matrix: FAIL'
+    refute_output --partial 'interrupt-matrix: PASS'
+    refute_output --partial 'matrix stall fallback deadline exceeded'
+    (( $(cat "${MATRIX_STATE}/clock") >= 3 ))
 }
 
 @test "5.4: a copy without cleanup turns every corresponding cell red" {
     _copy_matrix_repo
+    _matrix_response_clock
     sed -i "/^_51_cleanup() {/a\\    if [[ \"\${TMPDIR}\" == *\"\${CLEANUP_DEGRADE_CELL}\"* ]]; then return 0; fi" "${REALBOX}"
     local phase signal code
     for phase in assemble bench; do
@@ -674,6 +735,7 @@ STUB
 }
 
 @test "5.4: changed comment IDs fail the cell even with successful cleanup" {
+    _matrix_response_clock
     cat >"${MATRIX_STATE}/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -693,6 +755,7 @@ STUB
 }
 
 @test "5.4: a posted capture line fails the cell even with unchanged comment IDs" {
+    _matrix_response_clock
     mkdir -p "${MATRIX_STATE}/original"
     install -m 755 "${BATS_TEST_DIRNAME}/fixture/realbox_matrix_just.sh" "${MATRIX_STATE}/original/just"
     cat >"${MATRIX_STATE}/bin/just" <<'STUB'
