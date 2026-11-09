@@ -415,6 +415,12 @@ _copy_matrix_repo() {
     sed -i "s/verify_stop_group \"\${monitor}\" \"\${signal}\" || rc=1/if [[ \"\${TMPDIR}\" != *\"\${FORWARDING_DEGRADE_CELL}\"* ]]; then verify_stop_group \"\${monitor}\" \"\${signal}\" || rc=1; fi/" "${MATRIX_STATE}/repo/lib/verify_run.sh"
     run grep -qF -- "    ${stop_call}" "${MATRIX_STATE}/repo/lib/verify_run.sh"
     assert_failure 1
+    # Stress mode slows every interrupted child's cleanup past the unit deadline.
+    local delay=0
+    if [[ "${WORKTOOL_STRESS:-}" == 1 ]]; then delay=3.5; fi
+    export MATRIX_CLEANUP_DELAY="${delay}"
+    sed -i "/^_51_cleanup() {/a\\    if [[ \"\${MATRIX_CLEANUP_DELAY}\" != 0 ]]; then sleep \"\${MATRIX_CLEANUP_DELAY}\"; fi" "${REALBOX}"
+    printf '# 5.4 forwarding: injected cleanup delay=%s s per cell\n' "${MATRIX_CLEANUP_DELAY}" >&3
     local phase signal
     for phase in assemble bench; do
         for signal in INT TERM HUP; do
