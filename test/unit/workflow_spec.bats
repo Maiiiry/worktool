@@ -253,7 +253,7 @@ _meta_skeleton() {
     assert_success
     assert_output "${default}"
     output="${full}"
-    run jq -cr '[.error, .result.codexVerdict, (.calls[] | select(.role | startswith("review:")) | .schema.properties.verdict.enum)]' <<<"${output}"
+    run jq -cr '[.error, .result.reviewVerdict, (.calls[] | select(.role | startswith("review:")) | .schema.properties.verdict.enum)]' <<<"${output}"
     assert_output '[null,"mergeable",["mergeable","blocked","no-output"]]'
 }
 
@@ -785,7 +785,7 @@ const parallel = async fns => {
 const workflow = async (options, args) => {
   children.push({ options, args })
   await Promise.resolve()
-  return { issue: args.issue, pr: args.issue, ciState: 'green', codexVerdict: 'mergeable', rounds: 0 }
+  return { issue: args.issue, pr: args.issue, ciState: 'green', codexVerdict: 'not-run', reviewer: 'claude', reviewVerdict: 'mergeable', reviews: 1, rounds: 0 }
 }
 const body = readFileSync(path, 'utf8').replace(/^export const meta/m, 'const meta')
 const run = new (async () => {}).constructor('args', 'parallel', 'workflow', 'phase', 'log', body)
@@ -1993,7 +1993,7 @@ _rv_assert_fails_closed() {
     run _pl_run '{"mode":"light","codex":"off"}'
     assert_success
     run jq -cr '[.error, [.calls[].role], ([.calls[].prompt | contains("codex exec")] | any)]' <<<"${output}"
-    assert_output '[null,["prepare:b","implement:#283","review:#283:light","publish:#283","locate:b","stage-check:Implement:#7","ci:#7"],false]'
+    assert_output '[null,["prepare:b","implement:#283","review:#283:light","gates:Light","publish:#283","locate:b","stage-check:Implement:#7","ci:#7"],false]'
 }
 
 @test "milestone-fanout (node): forwards light mode to each child (#310)" {
@@ -2074,10 +2074,11 @@ _pl_stage_run() {
         run git -C "${BATS_TEST_TMPDIR}/worktree/n" rev-parse HEAD
         assert_output "${remote}"
         refute_output "${PL_BEFORE}"
-        run cat "${BATS_TEST_TMPDIR}/gates"
-        assert_output $'test lint\ntest changed'
+        # Gates run in their own job stage; the push script runs none (#755).
+        run jq -e '[.calls[].role] | index("gates:Fix-push") < index("push-check:Fix:#7")' <<<"${json}"
+        assert_success
+        assert [ ! -e "${BATS_TEST_TMPDIR}/gates" ]
         rm -rf "${BATS_TEST_TMPDIR}/worktree/n" "${BATS_TEST_TMPDIR}/remote"
-        rm "${BATS_TEST_TMPDIR}/gates"
     done
 }
 
@@ -2770,7 +2771,7 @@ _pl_resume_run() {
     run _pl_resume_run '{"pr":7,"base":"acceptance","gates":["just test lint","just test unit test/unit/workflow_spec.bats"]}'
     assert_success
     local json="${output}"
-    run jq -e '.error == null and .result.pr == 7 and .result.codexVerdict == "mergeable" and
+    run jq -e '.error == null and .result.pr == 7 and .result.reviewVerdict == "mergeable" and
         ([.calls[].role | test("^(implement|publish|locate):")] | any | not) and
         (.calls[] | select(.role == "ci:#7") | .prompt | contains("base acceptance")) and
         (.calls[] | select(.role | startswith("review:")) | .prompt | contains("origin/acceptance...HEAD"))' <<<"${json}"
@@ -2788,10 +2789,11 @@ _pl_resume_run() {
     run _pl_resume_run '{"base":"acceptance","gates":["just test lint","just test unit test/unit/workflow_spec.bats"]}'
     assert_success
     json="${output}"
-    run jq -e '.error == null and .result.pr == 7 and .result.codexVerdict == "mergeable" and
+    run jq -e '.error == null and .result.pr == 7 and .result.reviewVerdict == "mergeable" and
         ([.calls[].role | startswith("implement:")] | any | not) and
+        (.calls[] | select(.role == "gates:Resume-publish") | .prompt |
+            contains("-- just test lint`") and contains("-- just test unit test/unit/workflow_spec.bats`")) and
         (.calls[] | select(.role | startswith("publish:")) | .prompt |
-            contains("run just test lint && just test unit test/unit/workflow_spec.bats") and
             contains("git push -u origin b") and contains("--base acceptance --head b") and
             contains("Refs: #386") and contains("noreply") and contains("Body starts with [claude]"))' <<<"${json}"
     assert_success
@@ -2848,7 +2850,7 @@ _pl_resume_run() {
     git -C "${root}/src" worktree remove "${root}/worktree/n"
     run _pl_resume_run '{"pr":7}'
     assert_success
-    run jq -e '.error == null and .result.pr == 7 and .result.codexVerdict == "mergeable" and
+    run jq -e '.error == null and .result.pr == 7 and .result.reviewVerdict == "mergeable" and
         ([.calls[].role | startswith("implement:")] | any | not)' <<<"${output}"
     assert_success
     run git -C "${root}/worktree/n" rev-parse HEAD
@@ -2862,7 +2864,7 @@ _pl_resume_run() {
     _pl_resume_codex_complete
     run _pl_resume_run '{"base":"acceptance","items":[{"issue":386,"branch":"b","name":"n","task":"t","pr":7,"gates":["just test lint","just test unit test/unit/workflow_spec.bats"]}]}' "${FANOUT}"
     assert_success
-    run jq -e '.error == null and .result[0].pr == 7 and .result[0].codexVerdict == "mergeable" and
+    run jq -e '.error == null and .result[0].pr == 7 and .result[0].reviewVerdict == "mergeable" and
         .workflowCalls[0].args.pr == 7 and .workflowCalls[0].args.base == "acceptance" and
         (.calls[] | select(.role == "ci:#7") | .prompt | contains("before pushing run just test lint && just test unit test/unit/workflow_spec.bats")) and
         ([.calls[].role | startswith("implement:")] | any | not)' <<<"${output}"
@@ -2892,7 +2894,7 @@ _pl_resume_run() {
     rm -rf "${root}/worktree/n"
     run _pl_resume_run '{"pr":7}'
     assert_success
-    run jq -e '.error == null and .result.codexVerdict == "mergeable"' <<<"${output}"
+    run jq -e '.error == null and .result.reviewVerdict == "mergeable"' <<<"${output}"
     assert_success
     run git -C "${root}/worktree/n" rev-parse HEAD
     assert_output "${before}"
@@ -2908,15 +2910,15 @@ _pl_resume_run() {
         "${replies}" exec-resume-push
     assert_success
     json="${output}"
-    run jq -e '.error == null and .result.codexVerdict == "mergeable" and
-        ([.calls[].role] | index("push-check:Resume:#7") < index("ci:#7"))' <<<"${json}"
+    run jq -e '.error == null and .result.reviewVerdict == "mergeable" and
+        ([.calls[].role] | index("gates:Resume-push") < index("push-check:Resume:#7") and
+            index("push-check:Resume:#7") < index("ci:#7"))' <<<"${json}"
     assert_success
     run git --git-dir="${root}/remote" rev-parse refs/heads/b
     local remote="${output}"
     run git -C "${root}/worktree/n" rev-parse HEAD
     assert_output "${remote}"
-    run cat "${root}/gates"
-    assert_output $'test lint\ntest changed'
+    assert [ ! -e "${root}/gates" ]
 }
 
 @test "pr-loop resume: unpushed CI repair blocks without publication or review (#396)" {
@@ -3753,11 +3755,11 @@ JS
     assert_success
 }
 
-@test "pr-loop publishes a verified adoption comment without replacing the PR body (#552)" {
+@test "pr-loop publishes a verified adoption comment and updates only stale PR sections (#552)" {
     run _pl_blocked_run codex
     assert_success
     run jq -e '.calls[] | select(.role == "adoption:#7:r1") | .prompt |
-        contains("Do not edit the existing PR description") and
+        contains("update the affected human-written sections") and
         contains("[claude] 採納第 1 輪:") and contains("gh pr comment 7 --repo o/r --body-file") and
         contains("read the posted comment back")' <<<"${output}"
     assert_success
@@ -3816,8 +3818,8 @@ SH
     run _pl_run '{"mode":"light","codex":"off","base":"acceptance"}'
     assert_success
     json="$output"
-    jq -er '.calls[] | select(.role | startswith("review:")) | .prompt |
-        capture("Run (?<commands>just test lint.*?) blocking in the foreground after fixes"; "m").commands' \
+    jq -er '.calls[] | select(.role == "gates:Light") | .prompt |
+        [match("just job start \u0027[^\u0027]*\u0027 -- (.*?)` then"; "gm").captures[0].string] | join(" && ")' \
         <<<"$json" > "${root}/gates.sh"
     run bash -c 'cd "$1" && PATH="$1/bin:$PATH" GATE_LOG="$1/calls" bash gates.sh' _ "${root}"
     assert_success
@@ -4125,7 +4127,7 @@ SH
         run _pl_run '{}' '{"verdict":"mergeable","defects":[],"limitations":[],"suggestions":[],"answer":"ok"}' '{"evidence":"<stdout>"}' exec-red-record
     assert_success
     json="$output"
-    run jq -e '.result.codexVerdict == "mergeable" and
+    run jq -e '.result.reviewVerdict == "mergeable" and
         ([.ran[] | select(.cmd | startswith("gh pr view"))] | length == 1) and
         .result.blockingLeft == [] and
         (.ran[] | select(.cmd | startswith("gh pr view")) | .stdout | utf8bytelength < 16384)' <<<"$json"
@@ -4146,7 +4148,7 @@ SH
         run _pl_run '{}' '{"verdict":"mergeable","defects":[],"limitations":[],"suggestions":[],"answer":"ok"}' '{"evidence":"<stdout>"}' exec-red-record
     assert_success
     json="$output"
-    run jq -e '.result.codexVerdict == "mergeable" and
+    run jq -e '.result.reviewVerdict == "mergeable" and
         ([.ran[] | select(.cmd | startswith("gh pr view"))] | length == 1) and
         (.ran[] | select(.cmd | startswith("gh pr view")) | .stdout |
             utf8bytelength < 16384) and .result.blockingLeft == []' <<<"$json"
@@ -4168,7 +4170,7 @@ SH
         json="$output"
         expected=mergeable
         if [ "$scenario" = absent ]; then expected=blocked; fi
-        run jq -e --arg expected "$expected" '.result.codexVerdict == $expected and
+        run jq -e --arg expected "$expected" '(if $expected == "blocked" then .result.codexVerdict == "blocked" else .result.reviewVerdict == $expected end) and
             ([.ran[] | select(.cmd | startswith("gh pr view"))] | length == 1) and
             (.ran[] | select(.cmd | startswith("gh pr view")) | .stdout | utf8bytelength < 16384) and
             .result.blockingLeft == (if $expected == "blocked" then
@@ -4202,7 +4204,7 @@ SH
         run _pl_run '{}' '{"verdict":"mergeable","defects":[],"limitations":[],"suggestions":[],"answer":"ok"}' '{"evidence":"<stdout>"}' exec-red-record
     assert_success
     json="$output"
-    run jq -e '.result.codexVerdict == "mergeable" and
+    run jq -e '.result.reviewVerdict == "mergeable" and
         .result.blockingLeft == [] and
         ([.ran[] | select(.cmd | startswith("gh pr view"))] | length == 1) and
         (.ran[] | select(.cmd | startswith("gh pr view")) | .stdout | utf8bytelength < 16384)' <<<"$json"
@@ -4247,7 +4249,7 @@ SH
             run _pl_run '{}' '{"verdict":"mergeable","defects":[],"limitations":[],"suggestions":[],"answer":"ok"}' '{"evidence":"<stdout>"}' exec-red-record
         assert_success
         json="$output"
-        run jq -e --arg expected "$expected" '.result.codexVerdict == $expected and
+        run jq -e --arg expected "$expected" '(if $expected == "blocked" then .result.codexVerdict == "blocked" else .result.reviewVerdict == $expected end) and
             .result.blockingLeft == (if $expected == "blocked" then
                 ["PR 缺少 RED 紀錄；請補上實際指令與失敗 TAP 輸出後重跑"] else [] end) and
             ([.ran[] | select(.cmd | startswith("gh pr view"))] | length == 1) and
@@ -4286,7 +4288,7 @@ Reason: 僅修正文句，沒有行為變更。'; do
             json="$output"
             expected=blocked
             if [[ "$body" == *'Reason: 僅'* ]]; then expected=mergeable; fi
-            run jq -e --arg expected "$expected" '.result.codexVerdict == $expected and
+            run jq -e --arg expected "$expected" '(if $expected == "blocked" then .result.codexVerdict == "blocked" else .result.reviewVerdict == $expected end) and
                 .result.blockingLeft == (if $expected == "blocked" then
                     ["PR 缺少 RED 紀錄；請補上實際指令與失敗 TAP 輸出後重跑"] else [] end) and
                 ([.ran[] | select(.cmd | startswith("gh pr view"))] | length == 1) and
@@ -4652,7 +4654,7 @@ Reason: 僅修正文句，沒有行為變更。'; do
             "{\"verdict\":\"${verdict}\",\"defects\":[],\"limitations\":[\"environment risk\"],\"suggestions\":[\"optional cleanup\"],\"answer\":\"review complete\"}"
         assert_success
         json="${output}"
-        run jq -e '.error == null and .result.codexVerdict == "mergeable" and
+        run jq -e '.error == null and .result.reviewVerdict == "mergeable" and
             .result.blockingLeft == [] and .result.limitations == ["environment risk"] and
             .result.suggestions == ["optional cleanup"] and
             ([.calls[] | select(.role | startswith("fix:"))] | length) == 0' <<<"${json}"
@@ -4742,4 +4744,241 @@ Reason: 僅修正文句，沒有行為變更。'; do
             (.result.report.checks | map(select(.name == "ci-passed")) | length == 2)' <<<"${output}"
         assert_success
     done
+}
+
+# The shared PR text rule names the update command and keeps the machine section.
+_pl_pr_text_rule() {
+    jq -e --arg role "$1" '[.calls[] | select(.role | startswith($role)) | .prompt] | length > 0 and all(
+        (contains("Do not edit the existing PR description") | not) and
+        contains("update the affected human-written sections") and contains("gh pr edit") and
+        contains("--body-file") and contains("<!-- pr-loop:auto:start -->") and
+        contains("<!-- pr-loop:auto:end -->"))' <<<"$2"
+}
+
+@test "pr-loop publish lets a reused PR update stale human-written sections (#755)" {
+    run _pl_run
+    assert_success
+    run _pl_pr_text_rule "publish:" "${output}"
+    assert_success
+}
+
+@test "pr-loop Claude fix round updates stale human-written PR sections (#755)" {
+    run _pl_blocked_run claude
+    assert_success
+    run _pl_pr_text_rule "fix:" "${output}"
+    assert_success
+}
+
+@test "pr-loop codex fix brief reports stale PR sections instead of banning updates (#755)" {
+    run _pl_blocked_run codex
+    assert_success
+    run jq -e '.calls[] | select(.role == "fix:#7:r1") | .prompt | split("brief:\n")[1] |
+        (contains("Do not edit the existing PR description") | not) and
+        contains("name every human-written PR description section")' <<<"${output}"
+    assert_success
+}
+
+@test "pr-loop adoption stage updates stale PR sections and lists them in the comment (#755)" {
+    run _pl_blocked_run codex
+    assert_success
+    local json="${output}"
+    run _pl_pr_text_rule "adoption:" "${json}"
+    assert_success
+    run jq -e '.calls[] | select(.role == "adoption:#7:r1") | .prompt |
+        contains("PR 說明更新:") and contains("[claude] 採納第 1 輪:")' <<<"${json}"
+    assert_success
+}
+
+# Custom gates make every rendered gate list recognisable in prompts.
+PL_755_GATES='["just test lint","just test unit test/unit/x_spec.bats"]'
+
+# No prompt asks for the gate list as one foreground call.
+_pl_no_foreground_gates() {
+    jq -e '.error == null and ([.calls[].prompt |
+        test("x_spec\\.bats\\)? blocking in the foreground|Gates run BLOCKING in the foreground")] | any | not)' <<<"$1"
+}
+
+# A Claude fix round whose commit is still local when the Fix check runs.
+_pl_755_fix_run() {
+    local replies
+    replies='{"implement:":{"status":"ready","reason":""},
+        "stage-check:Implement":{"evidence":"{\"status\":\"\",\"localHead\":\"abc\",\"remoteHead\":\"abc\",\"prHead\":\"abc\",\"errors\":\"\"}"},
+        "stage-check:Fix":[{"evidence":"{\"ahead\":true,\"status\":\"\",\"localHead\":\"def\",\"remoteHead\":\"abc\",\"prHead\":\"abc\",\"errors\":\"\"}"},
+            {"evidence":"{\"status\":\"\",\"localHead\":\"def\",\"remoteHead\":\"def\",\"prHead\":\"def\",\"errors\":\"\"}"}],
+        "push-check:":{"status":"pushed"},"locate:":{"pr":7,"sha":"abc"},"ci:":{"state":"green","sha":"abc","detail":""},
+        "review:":{"verdict":"blocked","defects":["broken"],"limitations":[],"answer":"x","suggestions":[]}}'
+    local extra="${1:-}"
+    [[ -n "${extra}" ]] || extra='{}'
+    replies="$(jq -c --argjson extra "${extra}" '. + $extra' <<<"${replies}")"
+    node "${REPO_ROOT}/test/unit/fixture/workflow_run.mjs" "${PR_LOOP}" \
+        "$(jq -cn --argjson gates "${PL_755_GATES}" '{runTag:"test-run",repo:"o/r",repoDir:"/work",issue:283,branch:"b",name:"n",task:"t",implementer:"claude",maxRounds:1,gates:$gates}')" \
+        "${replies}"
+}
+
+@test "pr-loop guardrails point long gates at the job interface (#755)" {
+    local extra
+    for extra in '{}' '{"implementer":"claude"}' '{"mode":"light","codex":"off"}'; do
+        run _pl_run "${extra}"
+        assert_success
+        run jq -e '[.calls[] | select(.role | startswith("implement:")) | .prompt] | length > 0 and all(
+            (contains("Gates run BLOCKING in the foreground") | not) and contains("just job start") and
+            contains("just job wait"))' <<<"${output}"
+        assert_success
+    done
+}
+
+@test "pr-loop Claude fix round runs its gates through jobs (#755)" {
+    run _pl_755_fix_run
+    assert_success
+    local json="${output}"
+    run _pl_no_foreground_gates "${json}"
+    assert_success
+    run jq -e '.calls[] | select(.role == "fix:#7:r1") | .prompt |
+        contains("just job start") and contains("just job wait") and contains("--max-seconds 540") and
+        contains("-- just test unit test/unit/x_spec.bats`")' <<<"${json}"
+    assert_success
+}
+
+@test "pr-loop push-check pushes only after a separate gate job stage (#755)" {
+    run _pl_755_fix_run
+    assert_success
+    local json="${output}"
+    run jq -e '([.calls[].role] | index("gates:Fix-push") < index("push-check:Fix:#7")) and
+        (.calls[] | select(.role == "push-check:Fix:#7") | .prompt |
+            ([match("`(cd [^`]*git push origin[^`]*)`").captures[0].string] | length == 1 and
+             all(contains("just test") | not)))' <<<"${json}"
+    assert_success
+    run _pl_755_fix_run '{"gates:":{"state":"red","detail":"not ok 1 lint"}}'
+    assert_success
+    run jq -e '.result.codexVerdict != "mergeable" and (.result.blockingLeft | length > 0) and
+        ([.calls[].role | startswith("push-check:")] | any | not)' <<<"${output}"
+    assert_success
+}
+
+@test "pr-loop light review and publish leave gates to a job stage (#755)" {
+    run _pl_run "$(jq -cn --argjson gates "${PL_755_GATES}" '{mode:"light",codex:"off",gates:$gates}')"
+    assert_success
+    local json="${output}"
+    run _pl_no_foreground_gates "${json}"
+    assert_success
+    run jq -e '[.calls[].role] | index("review:#283:light") < index("gates:Light") and
+        index("gates:Light") < index("publish:#283")' <<<"${json}"
+    assert_success
+}
+
+@test "pr-loop light gate failure stops before publishing (#755)" {
+    run node "${REPO_ROOT}/test/unit/fixture/workflow_run.mjs" "${PR_LOOP}" \
+        '{"runTag":"test-run","repo":"o/r","repoDir":"/work","issue":283,"branch":"b","name":"n","task":"t","mode":"light"}' \
+        '{"implement:":{"status":"ready","reason":""},"review:":{"verdict":"mergeable","defects":[],"limitations":[],"suggestions":[],"answer":"ok"},"gates:":{"state":"red","detail":"not ok 1 lint"}}'
+    assert_success
+    run jq -e '.result.ciState == "none" and (.result.blockingLeft | index("not ok 1 lint") != null) and
+        ([.calls[].role | test("^(publish|ci):")] | any | not)' <<<"${output}"
+    assert_success
+}
+
+@test "pr-loop resume publish runs gates in a job stage before pushing (#755)" {
+    _pl_resume_setup
+    _pl_resume_codex_complete
+    git -C "${BATS_TEST_TMPDIR}/worktree/n" commit -qm 'feat: pending' -m 'Refs: #386' --allow-empty
+    run _pl_resume_run "$(jq -cn --argjson gates "${PL_755_GATES}" '{gates:$gates}')"
+    assert_success
+    local json="${output}"
+    run _pl_no_foreground_gates "${json}"
+    assert_success
+    run jq -e '.result.pr == 7 and ([.calls[].role] | index("gates:Resume-publish") < index("publish:#386:resume"))' <<<"${json}"
+    assert_success
+}
+
+@test "pr-loop resume publish stops on a red gate job without publishing (#755)" {
+    _pl_resume_setup
+    _pl_resume_codex_complete
+    git -C "${BATS_TEST_TMPDIR}/worktree/n" commit -qm 'feat: pending' -m 'Refs: #386' --allow-empty
+    local root="${BATS_TEST_TMPDIR}"
+    run node "${REPO_ROOT}/test/unit/fixture/workflow_run.mjs" "${PR_LOOP}" \
+        "$(jq -cn --arg d "${root}/src" '{runTag:"test-run",repo:"o/r",repoDir:$d,issue:386,branch:"b",name:"n",task:"t"}')" \
+        '{"prepare:":{"state":"<stdout>"},"gates:":{"state":"red","detail":"not ok 3 changed spec"},"publish:":{"pr":7,"sha":"abc"}}' exec-resume
+    assert_success
+    run jq -e '.error == null and .result.pr == 0 and
+        (.result.blockingLeft | map(contains("not ok 3 changed spec")) | any) and
+        ([.calls[].role | test("^(publish|ci):")] | any | not)' <<<"${output}"
+    assert_success
+}
+
+@test "pr-loop CI local test rules with custom gates use the job interface (#755)" {
+    run _pl_run "$(jq -cn --argjson gates "${PL_755_GATES}" '{gates:$gates}')"
+    assert_success
+    run _pl_no_foreground_gates "${output}"
+    assert_success
+}
+
+# Evidence the codex-comment stage returns: the PR head and whether the round comment exists there.
+_pl_755_comment() { jq -cn --arg head "$1" --argjson found "$2" '{evidence: ({head:$head, found:$found} | tojson)}'; }
+
+# Full run with one review reply and a codex-comment reply.
+_pl_755_review_run() {
+    local replies
+    replies='{"implement:":{"status":"ready","reason":""},
+        "stage-check:":{"evidence":"{\"status\":\"\",\"localHead\":\"abc\",\"remoteHead\":\"abc\",\"prHead\":\"abc\",\"errors\":\"\"}"},
+        "locate:":{"pr":7,"sha":"abc"},"ci:":{"state":"green","sha":"abc","detail":""},
+        "review:":{"verdict":"mergeable","defects":[],"limitations":[],"suggestions":[],"answer":"ok"}}'
+    replies="$(jq -c --argjson comment "$2" '. + {"codex-comment:": $comment}' <<<"${replies}")"
+    node "${REPO_ROOT}/test/unit/fixture/workflow_run.mjs" "${PR_LOOP}" \
+        "$(jq -cn --argjson extra "$1" '{runTag:"test-run",repo:"o/r",repoDir:"/work",issue:283,branch:"b",name:"n",task:"t"} + $extra')" \
+        "${replies}"
+}
+
+@test "pr-loop reports a Claude review as reviewer claude, never as codex mergeable (#755)" {
+    run _pl_755_review_run '{}' "$(_pl_755_comment abc true)"
+    assert_success
+    run jq -e '.error == null and .result.reviewer == "claude" and .result.reviewVerdict == "mergeable" and
+        .result.codexVerdict == "not-run" and .result.reviews == 1 and .result.rounds == 0 and
+        .result.blockingLeft == [] and ([.calls[].role | startswith("codex-comment:")] | any | not)' <<<"${output}"
+    assert_success
+}
+
+@test "pr-loop codex mergeable requires the round comment at the current head (#755)" {
+    run _pl_755_review_run '{"implementer":"claude"}' "$(_pl_755_comment abc true)"
+    assert_success
+    local json="${output}"
+    run jq -e '.error == null and .result.reviewer == "codex" and .result.reviewVerdict == "mergeable" and
+        .result.codexVerdict == "mergeable" and .result.reviews == 1 and .result.blockingLeft == [] and
+        (.calls[] | select(.role == "review:#7:r1") | .prompt | contains("[codex] 第 1 輪複驗 head abc")) and
+        (.calls[] | select(.role == "codex-comment:#7:r1") | .prompt |
+            contains("gh pr view 7 --repo o/r --json headRefOid,comments"))' <<<"${json}"
+    assert_success
+}
+
+@test "pr-loop codex verdict is not mergeable without a confirmed round comment (#755)" {
+    local comment
+    for comment in null "$(_pl_755_comment abc false)" "$(_pl_755_comment other true)" '{"evidence":"not json"}'; do
+        run _pl_755_review_run '{"implementer":"claude"}' "${comment}"
+        assert_success
+        run jq -e '.error == null and .result.reviewer == "codex" and .result.reviewVerdict == "mergeable" and
+            .result.codexVerdict != "mergeable" and (.result.blockingLeft | length > 0)' <<<"${output}"
+        assert_success
+    done
+}
+
+@test "pr-loop counts reviews separately from fix rounds (#755)" {
+    local replies
+    replies='{"implement:":{"status":"ready","reason":""},
+        "stage-check:Implement":{"evidence":"{\"status\":\"\",\"localHead\":\"abc\",\"remoteHead\":\"abc\",\"prHead\":\"abc\",\"errors\":\"\"}"},
+        "stage-check:Fix":{"evidence":"{\"status\":\"\",\"localHead\":\"def\",\"remoteHead\":\"def\",\"prHead\":\"def\",\"errors\":\"\"}"},
+        "locate:":{"pr":7,"sha":"abc"},"ci:":{"state":"green","sha":"abc","detail":""},
+        "review:":[{"verdict":"blocked","defects":["broken"],"limitations":[],"suggestions":[],"answer":"x"},
+            {"verdict":"mergeable","defects":[],"limitations":[],"suggestions":[],"answer":"ok"}]}'
+    run node "${REPO_ROOT}/test/unit/fixture/workflow_run.mjs" "${PR_LOOP}" \
+        '{"runTag":"test-run","repo":"o/r","repoDir":"/work","issue":283,"branch":"b","name":"n","task":"t"}' "${replies}"
+    assert_success
+    run jq -e '.error == null and .result.reviews == 2 and .result.rounds == 1 and
+        .result.reviewer == "claude" and .result.codexVerdict == "not-run"' <<<"${output}"
+    assert_success
+}
+
+@test "milestone-fanout logs the reviewer and review verdict of each child (#755)" {
+    run _fanout_batches '{}'
+    assert_success
+    run jq -e '.error == null and ([.logs[] | select(contains(" done:"))] |
+        all(contains("reviewer=claude review=mergeable reviews=1")))' <<<"${output}"
+    assert_success
 }

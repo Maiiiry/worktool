@@ -102,6 +102,7 @@ job 名稱由 `runTag`、階段名稱與腳本內遞增計數組成，不讀取�
 完整 log 留在 `.agents/state/job/<name>/log`，綠的結果尾段逐字交給發布 stage 作為測試證據。
 CI 的本機 gate 與有 timeout 的 `gh pr checks --watch` 同樣走 job；一般未帶標記的獨立驗收 session
 仍可跑 `just verify all`、`just verify realbox` 與 `just test`（長工作仍遵守 timeout 規則）。見 ADR-0015。
+resume 發布（分支已有 commit、還沒有 PR）、light 發布，以及本地 HEAD 領先遠端時的 push-check，都先跑同一種 gate stage，綠了才推送；gate 紅就停止，並在 `blockingLeft` 附上失敗摘要。push-check 的腳本只檢查狀態後推送，不再跑 gate。Claude 的 Fix 輪同樣以 job start／wait 執行 gate。沒有任何 stage 要求把 gate 當成一次前景呼叫跑完（#755）。
 只有 CI checks job 的 wait 回傳 `1` 時，前景 wrapper 會輸出 `CI_CHECK_FAILED` 並交回控制；這不代表綠燈，CI agent 必須讀取失敗 log、以 TDD 修復、推送後重看 checks，修復上限維持兩輪。start 失敗、其他非 `0`／`124` 退出碼與六次 wait 耗盡仍直接回報紅；CI 本機 gate 與修復後 gate 的失敗規則不變。
 指定既有 `branch` 與 `pr` 且實作已完成、工作區乾淨時，跳過實作與開 PR，直接進入 CI／審查迴圈；需要接續實作時仍重用指定 PR，不另開 PR。
 CI 先確認 worktree 乾淨、分支與開啟中的 PR 相符、目標是 `base`。
@@ -157,13 +158,13 @@ light 不受 `implementer` 的選擇影響，也不因 `codex: "off"` 留配額�
 
 1. 一個 Claude 子代理在獨立 worktree 直接修改並 commit，不叫 codex 實作；有行為改變時仍依 TDD 逐片 RED→GREEN。
 2. 另一個 Claude 子代理只看完整 diff，審查並套用必改，追加 commit；修改或審查未成功就停止，不發布。
-3. 阻塞執行 `just test lint` 與改到的 spec（`just test <tier> <spec> [--filter REGEX]`）；排除 CI-only 的 `test/system-real/` 與 `test/system/real_engine_spec.bats`，交由 CI 驗證，不跑 `just test changed` 或完整 tier；通過後才推送、開 PR。
+3. 審查後由獨立的 job gate stage 執行 `just test lint` 與改到的 spec（`just test <tier> <spec> [--filter REGEX]`）；排除 CI-only 的 `test/system-real/` 與 `test/system/real_engine_spec.bats`，交由 CI 驗證，不跑 `just test changed` 或完整 tier；通過後才推送、開 PR。
 4. 等 CI 全綠，失敗時在同一 worktree 修正並追加 commit、再推送；不跑 codex 複驗，也不 merge。
 
 仍遵守一個 issue 一個 PR、noreply author 與 committer、無署名、不改寫已推送 commit。
 修改失敗的結構化結果須帶 `reason`（失敗步驟與原因），workflow 會把它附在 `blockingLeft`；未提供原因時明確標示。發布並 Locate 後，同樣執行下述 Implement 完成檢查。
 
-回傳沿用 full 的欄位，`codexVerdict: "skipped"`、`rounds: 0`；以 `ciState` 與 `blockingLeft` 判斷是否完成。
+回傳沿用 full 的欄位，`codexVerdict: "skipped"`、`rounds: 0`；diff 審查以 `reviewer: "claude"`、`reviewVerdict` 與 `reviews` 回報；以 `ciState` 與 `blockingLeft` 判斷是否完成。
 例如上述呼叫只需把 `mode` 改為 `"light"`，並以 `gates` 指定此次修改的 lint 與 spec 指令。
 
 ## full 迴圈內容
@@ -188,9 +189,13 @@ light 不受 `implementer` 的選擇影響，也不因 `codex: "off"` 留配額�
    workflow 只在有效審查的 `defects` 為空時判定 `mergeable`，忽略 reviewer 的 `verdict`；無輸出、分類欄位缺漏或格式錯誤回報 `no-output`，停止且不修正。
 5. **Fix**:`defects` 非空時（即使 reviewer 寫 `mergeable`），直接在同一次 workflow 進入既有 Fix 迴圈，不必重開或手動設定 `implement.rc`；agent 在同一 worktree 針對每個缺陷先補失敗測試再修,獨立 commit,
    push,PR 留言 `[claude] 採納第 N 輪:`;回到 CI -> Codex;最多 `maxRounds` 輪。
+   Fix 輪的 commit 讓人寫的 PR 說明與實際行為不一致時，同一輪以 `gh pr edit --body-file` 更新受影響的段落，`<!-- pr-loop:auto:start -->` 到 `<!-- pr-loop:auto:end -->` 之間的機械段落原樣保留（#755）；採納留言最後一行 `PR 說明更新:` 列出改了哪些段落（沒有則寫「無」）。codex 實作的 Fix 輪由 codex 在摘要列出過時段落，採納留言 stage 確認 head 後更新。
    Fix 結束也以同一腳本確認工作區乾淨、本地 HEAD 已推送且與 PR head 相同，並要求 PR head 與修正前不同；codex 與 Claude 路徑皆適用。任一檢查失敗就回報 `blocked`，`blockingLeft` 附上 git status、修正前後 HEAD 與遠端比較，不進入下一輪 CI／審查。
    已推送的 commit 不得 rebase、amend、reset 或 force push 改寫；只追加新 commit，需要同步 main 時用 merge。
-6. 回傳 `{ issue, pr, sha, ciState, codexVerdict, rounds, blockingLeft, limitations, suggestions }`，`blockingLeft` 列出剩餘缺陷（流程失敗時保留失敗原因）。
+6. 回傳 `{ issue, pr, sha, ciState, codexVerdict, reviewer, reviewVerdict, reviews, rounds, blockingLeft, limitations, suggestions }`，`blockingLeft` 列出剩餘缺陷（流程失敗時保留失敗原因）。
+   `reviewer` 是最後一次審查的審查者（`claude`、`codex`，沒有審查時為 `none`），`reviewVerdict` 是該次審查的結論，`reviews` 是審查次數，與只計 Fix 輪數的 `rounds` 分開（#755）。
+   預設 `implementer: "codex"` 由 Claude 審查，此時 `codexVerdict` 一律是 `not-run`，呼叫者依 `reviewer` 判斷是否仍需 codex 確認。
+   codex 審查時，`[codex] 第 N 輪複驗` 留言的第一行帶上審查的 head（`[codex] 第 N 輪複驗 head <sha>`）；workflow 回報 `codexVerdict: "mergeable"` 前，以 `gh pr view --json headRefOid,comments` 確認 PR head 仍是該 sha 且留言存在，讀取失敗或找不到就回 `blocked`。
    `limitations` 與 `suggestions` 累積各輪有效審查的內容並去重，包含 Fix 後或流程失敗的回傳；
    `limitations` 提供呼叫者寫入 PR 說明的「已知限制」段落，workflow 不在此機械改寫 PR 說明。**不 merge PR**:PR 合併順序與衝突由主迴圈處理。
 
