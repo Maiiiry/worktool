@@ -62,5 +62,5 @@ user config 已由 #199／PR #228 交付：`just box assemble` 以 symlink 從 h
 - 要改先問：待補。目前沒有詢問流程；受管區塊以外會被改動的只有狀態檔的狀態鍵（依上面的例外不需詢問），以及下面待補的情形。之後任何功能需要改既有內容時，要先有詢問機制與測試。
 - 使用者寫在受管區塊標記之間的行：待補。標記行寫著 do not edit，改寫時區塊內的內容整段換掉；使用者若違反標記在區塊內寫東西，會被覆蓋，目前沒有偵測也沒有測試。
 - profile 或狀態檔是 symlink 時：待補。`setup.sh` 以 `config_write_atomic` 寫入 ghostty config／distrobox.conf、以 `config_set` 寫入狀態鍵，`home_record` 也使用 `config_set`；兩者都透過 `lib/config.sh` 的 `_config_replace` 先寫同目錄暫存檔再改名取代目標；依程式碼，目標若是 symlink，改寫後 symlink 本身會被換成一般檔，連結目標不變但連結消失。目前沒有測試。
-- 盒子 HOME 目錄（`just box assemble --home`）裡使用者已有的檔案不被刪除或覆蓋：待補，目前沒有測試。
+- 盒子 HOME 目錄（`just box assemble --home`）裡使用者已有的檔案：同名連結項目不覆蓋已由上面的 #199 守住；同名連結項目以外的既有檔案不被刪除或覆蓋（例如刪除路徑）：待補，目前沒有測試。
 - 全 repo 層級的守門（例如禁止腳本刪除 HOME 底下非 worktool 建立的檔案）：待補。
