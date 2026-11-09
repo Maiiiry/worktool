@@ -25,7 +25,7 @@ export const meta = {
 //     runTag: "issue150-attempt1",      // required: unique per new run; reuse on resume
 //     task: "...",                     // required: what to build, acceptance criteria, files, tests
 //     base: "main",                   // optional: target branch, including acceptance branches
-//     gates: ["just test lint", "..."],    // optional replacement gates; default = lint + changed
+//     gates: ["just test lint", "..."],    // optional replacement gates; default = lint + touched specs (ADR-0014)
 //     codex: "on" | "off",             // optional: default "on"; "off" = quota paused
 //     maxRounds: 3,                    // optional: number of Fix rounds allowed (0 = review once, never fix)
 //     parent: "#5",                    // optional: "Part of" reference in the PR body
@@ -59,13 +59,12 @@ const REPO = A.repo
 const REPO_DIR = A.repoDir
 const WORKTREE_ROOT = `${REPO_DIR}/../worktree`
 const CODEX = codexArg === 'on'
-const CHANGED_GATE = BASE === 'main' ? 'just test changed' : `just test changed --base origin/${BASE}`
 const PARENT = A.parent || ''
 const WT = `${WORKTREE_ROOT}/${A.name}`
 const SCRATCH = `${WORKTREE_ROOT}/.scratch/${A.name}`
 // POSIX single quoting: how a value reaches a shell command.
 const sq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
-// Light selects touched local specs; real-engine coverage belongs to CI.
+// The default gate selects touched local specs; real-engine coverage belongs to CI (ADR-0014).
 const TOUCHED_GATE = `bash -c ${sq(`set -euo pipefail
 paths="$(git diff --name-only --diff-filter=ACMR ${sq(`origin/${BASE}`)}...HEAD && git diff --name-only --diff-filter=ACMR HEAD && git ls-files --others --exclude-standard)"
 paths="$(printf '%s\\n' "$paths" | sort -u)"
@@ -80,7 +79,7 @@ while IFS= read -r spec; do
 done <<< "$paths"`)}`
 // A string is one shell command; arrays delimit multiple commands explicitly.
 const GATE_COMMANDS = A.gates === undefined
-  ? ['just test lint', MODE === 'light' ? TOUCHED_GATE : CHANGED_GATE]
+  ? ['just test lint', TOUCHED_GATE]
   : typeof A.gates === 'string' ? [A.gates] : A.gates
 if (!Array.isArray(GATE_COMMANDS) || !GATE_COMMANDS.length ||
     GATE_COMMANDS.some(g => typeof g !== 'string' || !g.trim())) {
@@ -118,9 +117,7 @@ const validReview = (review) => review && ['defects', 'limitations', 'suggestion
 
 const LOCAL_TEST_RULES = A.gates
   ? `In the TDD loop run only the slice's spec with just test <tier> <spec> [--filter]; before pushing run ${GATES}. Never run a whole tier locally; CI runs every tier.`
-  : MODE === 'light'
-  ? `In the TDD loop run only the slice's spec with just test <tier> <spec> [--filter]; before pushing run lint and only the touched specs. Leave system-real specs (including test/system/real_engine_spec.bats) to CI. Never run just test changed or a whole tier locally; CI runs every tier.`
-  : `In the TDD loop run only the slice's spec with just test <tier> <spec> [--filter]; before pushing run just test lint and ${CHANGED_GATE}. Never run a whole tier locally; CI runs every tier.`
+  : `In the TDD loop run only the slice's spec with just test <tier> <spec> [--filter]; before pushing run lint and only the touched specs. Leave system-real specs (including test/system/real_engine_spec.bats) to CI. Never run just test changed or a whole tier locally; CI runs every tier.`
 const PUSH_HISTORY_RULES = `Never rewrite pushed commits: no rebase, amend, reset, or force push of pushed history. The only exception is the commit-email remedy from #234: rewrite pushed commits only to fix a non-noreply author, then push with --force-with-lease. Only add new commits; sync with ${BASE} by merging.`
 const COMMON_GUARDRAILS = `
 Repo: ${REPO_DIR} (branch main is protected: ci-passed required, merge only via PR). Work ONLY inside ${WT}; never touch another checkout or worktree. Rules: one issue = one PR, one thing; TDD (tests FIRST, show RED then GREEN in your report); tests run ONLY in Docker via the just interface (${GATES}) - never bats on the host, never install anything on the host. ${LOCAL_TEST_RULES} ${PUSH_HISTORY_RULES} Commits/code/comments English; issue/PR/docs zh-TW; NO emoji; no new "# shellcheck disable"; functions < 50 lines; every user action goes through just (thin forwarder recipe; the SCRIPT owns --help/validation, parses the whole command line before serving help, "unknown option '<x>' (see --help)" exit 2 - copy script/box/assemble.sh + script/box/justfile.box). All gh calls pass --repo ${REPO}. Long gates run only through the job interface (just job start, then foreground just job wait --max-seconds 540 calls) in the stage that owns them; never as one long foreground call, never with Monitor or background tool calls. Review notes, round evidence and coordination notes go to PR comments or the gitignored .agents/state/. Never commit these notes into the repo. doc/evidence/ is only for acceptance evidence. Never merge a PR. End the final paragraph of every commit message with Refs: #${A.issue}. For multiple issues, use one Refs: #<issue> line per issue.`
@@ -191,9 +188,7 @@ const LOCATE = `Resolve the open PR for branch ${A.branch} in ${REPO}: run \`gh 
 
 const CI_LOCAL_TEST_RULES = A.gates
   ? `Before pushing run ${GATES} only through the job interface below. Never run a whole tier locally; CI runs every tier.`
-  : MODE === 'light'
-  ? 'Locally run only just test lint and touched specs with just test <tier> <spec> [--filter]. Leave system-real specs (including test/system/real_engine_spec.bats) to CI. Never run just test changed or a whole tier locally; CI runs every tier.'
-  : 'Locally run only just test lint and changed unit specs with just test unit <spec...> [--filter REGEX]. Never run matrix, integration, system, system-real, acceptance or a whole unit tier locally; those tiers are verified by CI (ci-passed).'
+  : 'Locally run only just test lint and touched specs with just test <tier> <spec> [--filter]. Leave system-real specs (including test/system/real_engine_spec.bats) to CI. Never run just test changed or a whole tier locally; CI runs every tier.'
 
 // The gate agent has no implementer context and returns only compact results.
 let jobCounter = 0
@@ -664,6 +659,6 @@ return result({ pr, sha, ciState: 'green', codexVerdict: verdict, rounds: fixes,
 //   "name": "impl283",
 //   "task": "依 issue #283 的範圍與驗收實作。",
 //   "implementer": "codex",
-//   "gates": ["just test lint", "just test changed"],
+//   "gates": ["just test lint", "just test unit test/unit/workflow_spec.bats"],
 //   "maxRounds": 3
 // }
