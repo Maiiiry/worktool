@@ -445,22 +445,104 @@ _compare_52_doc() {
     [[ "${doc}" != *'最後一次外部探測最多 1 秒，因此總上限為 5 秒'* ]]
 }
 
-@test "acceptance tool list names what the verify scripts require (#718)" {
-    local tools rule
+# The `<tool>\t<item>` lines the tool list (stdin) states: every
+# `` `<tool>`(<note>,|;<items> 用) `` with its items split on ` / ` and each
+# range `a.b-a.c` expanded.
+_doc_tool_items() {
+    local _ann _tool _items _item _first _last _prefix _n _nl=$'\n'
+    while IFS= read -r _ann; do
+        _tool="${_ann#\`}"
+        _tool="${_tool%%\`*}"
+        _items="${_ann#*\(}"
+        _items="${_items% 用)}"
+        _items="${_items##*[,;]}"
+        while IFS= read -r _item; do
+            if [[ "${_item}" == *-* ]]; then
+                _first="${_item%-*}"
+                _last="${_item#*-}"
+                _prefix="${_first%.*}"
+                [[ "${_last%.*}" == "${_prefix}" ]] || return 1
+                for (( _n = ${_first##*.}; _n <= ${_last##*.}; _n++ )); do
+                    printf '%s\t%s.%s\n' "${_tool}" "${_prefix}" "${_n}"
+                done
+            else
+                printf '%s\t%s\n' "${_tool}" "${_item}"
+            fi
+        done <<<"${_items// \/ /${_nl}}"
+    done < <(grep -oE "\`[a-z][a-z0-9_-]*\`\([^)]* 用\)")
+}
+
+# Tools the list covers without naming items: the repo's own dependencies,
+# the distrobox / ghostty sentence, the shells, `awk` / `grep` / `sed` and
+# the coreutils catch-all.
+ACCEPTANCE_UNANNOTATED_TOOLS=(docker just git bash sh distrobox ghostty awk grep sed
+    cat chmod cp cut date dirname env id ln mkdir mkfifo mktemp mv readlink realpath
+    rm rmdir sha256sum sleep sort stat tee timeout touch uname wc)
+
+@test "acceptance tool list names exactly the items each tool is required by (#718, #771)" {
+    load "${BATS_TEST_DIRNAME}/../helper/graph"
+    load "${BATS_TEST_DIRNAME}/../helper/verify_tools"
+    local tools rule list derived expected documented
+    local -a scripts
     tools="$(sed -n '/^- 驗收工具:/p' "${REPO_ROOT}/doc/acceptance.md")"
     [[ -n "${tools}" ]] || return 1
-    # gh: gate 2.2, realbox 5.1 / 5.3, evidence 6.1-6.3.
-    [[ "${tools}" == *"\`gh\`(已登入,2.2 / 5.1 / 5.3 / 6.1-6.3 用)"* ]]
-    # jq: realbox 5.1 / 5.3, evidence 6.1 / 6.3 (6.2 does not need it).
-    [[ "${tools}" == *"\`jq\`(5.1 / 5.3 / 6.1 / 6.3 用)"* ]]
-    # Tools outside coreutils, each with the items that require them.
-    [[ "${tools}" == *"\`find\`(findutils;3.1 / 3.4 / 3.10-3.13 / 5.2 / 5.3 用)"* ]]
-    [[ "${tools}" == *"\`diff\`(diffutils;3.4 用)"* ]]
-    [[ "${tools}" == *"\`cmp\`(diffutils;3.10-3.13 / 5.2 / 5.3 用)"* ]]
-    [[ "${tools}" == *"\`flock\`(util-linux;3.5 用)"* ]]
-    [[ "${tools}" == *"\`ps\`(procps;5.2 / 5.3 用)"* ]]
+    # The item scripts, as the document names them.
+    list="$(grep -oE "\`script/verify/\`\((\`[a-z_]+\.sh\`( / )?)+\)" "${REPO_ROOT}/doc/acceptance.md" |
+        grep -oE '[a-z_]+\.sh' | sed 's|^|script/verify/|')"
+    mapfile -t scripts <<<"${list}"
+    [[ "${#scripts[@]}" -eq 6 ]] || return 1
+    derived="$(verify_item_tools "${REPO_ROOT}" "${scripts[@]}")"
+    [[ -n "${derived}" ]] || return 1
+    expected="$(awk -F'\t' 'NR == FNR { skip[$1] = 1; next } !($1 in skip)' \
+        <(printf '%s\n' "${ACCEPTANCE_UNANNOTATED_TOOLS[@]}") - <<<"${derived}")"
+    [[ -n "${expected}" ]] || return 1
+    documented="$(_doc_tool_items <<<"${tools}" | LC_ALL=C sort -u)"
+    assert_equal "${documented}" "${expected}"
+    [[ "${tools}" == *"\`awk\` / \`grep\` / \`sed\`"* ]]
+    [[ "${tools}" == *'coreutils 指令'* ]]
+    # "1-2、4、6 不需 distrobox / ghostty": only sections 3 and 5 require them.
+    [[ "${tools}" == *'1-2、4、6 不需 distrobox / ghostty'* ]]
+    run awk -F'\t' '($1 == "distrobox" || $1 == "ghostty") && $2 !~ /^[35]\./' <<<"${derived}"
+    assert_output ''
     [[ "${tools}" != *'(coreutils + awk)'* ]]
     rule="$(sed -n "/^規則:入口一律 \`just\`/p" "${REPO_ROOT}/doc/acceptance.md")"
     [[ -n "${rule}" ]] || return 1
     [[ "${rule}" == *'驗收工具(timeout / gh / jq / grep)查'* ]]
+}
+
+@test "the tool derivation follows an item's call closure and fails closed (#771)" {
+    load "${BATS_TEST_DIRNAME}/../helper/graph"
+    load "${BATS_TEST_DIRNAME}/../helper/verify_tools"
+    local tree="${BATS_TEST_TMPDIR}/repo"
+    mkdir -p "${tree}/script/verify"
+    cat >"${tree}/script/verify/x.sh" <<'EOF'
+_dispatch() {
+    case "$1" in
+        9.1) _item_9_1 ;;
+        9.2) printf 'grp\n' ;;
+    esac
+}
+_helper() {
+    guard_require zstd \
+        xz || return $?
+}
+_item_9_1() { _helper; for _t in lz4 lzop; do _p="$(_resolve_exec "${_t}" 'why')"; done; _cleanup_push 9-a; }
+_cleanup_run() {
+    case "$1" in
+        9-a) _clean_a ;;
+        9-b) _clean_b ;;
+    esac
+}
+_clean_a() { guard_require unzip; }
+_clean_b() { guard_require rar; }
+_preconditions_grp() { _require_tool brotli "$1"; type -P pigz >/dev/null; }
+_unreached() { guard_require bzip2; }
+EOF
+    run verify_item_tools "${tree}" script/verify/x.sh
+    assert_success
+    assert_output "$(printf '%s\t%s\n' brotli 9.2 lz4 9.1 lzop 9.1 pigz 9.2 unzip 9.1 xz 9.1 zstd 9.1)"
+    printf '%s\n' '_f() { guard_require zstd; }' >"${tree}/script/verify/x.sh"
+    run verify_item_tools "${tree}" script/verify/x.sh
+    assert_failure
+    assert_output --partial 'no item entry point found in script/verify/x.sh'
 }
