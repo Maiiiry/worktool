@@ -321,6 +321,13 @@ _check_evidence_tree() {
     assert_output --partial "test/unit/verify_gate_spec.bats"
 }
 
+@test "#754: invariant 4 exit 3 names both unavailable and inconclusive measurement" {
+    run bash -c 'grep -A1 "^- \*\*永不靜默失敗" "$1"' _ "${CONTRACT}"
+    assert_success
+    assert_output --partial '必要工具、環境或證據不可用'
+    assert_output --partial '延遲量測因主機不夠安靜而未判定（[ADR 0003](adr/0003-latency-gate-inconclusive.md)）'
+}
+
 @test "#728: latency index note cites the settled ADR 0003 decision" {
     run _section 6
     assert_success

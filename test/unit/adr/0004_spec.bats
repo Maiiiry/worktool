@@ -109,6 +109,13 @@ _contract_promise_1() {
     refute_line --regexp "狀態檔裡使用者自己加的行.*待補"
 }
 
+@test "#754: the box HOME pending line leaves out the same-name entries #199 guards" {
+    run _adr4_guard_section
+    assert_success
+    refute_line --regexp '^- 盒子 HOME 目錄.*裡使用者已有的檔案不被刪除或覆蓋：待補'
+    assert_line --regexp '^- 盒子 HOME 目錄.*同名連結項目不覆蓋已由上面的 #199.*守住；.*：待補'
+}
+
 @test "doc/contract.md invariant-1 promise carries the state-key exception and verified state-file preservation" {
     run _contract_promise_1
     assert_success
