@@ -381,6 +381,15 @@ _run_evidence_item() {
     assert_output --partial "evidence.sh: unknown item '9.9' (see --help)"
 }
 
+@test "#719: an unknown item after a valid one exits 2 before any check runs" {
+    _stub_all_ok
+    run "${EVIDENCE}" 6.1 bogus
+    assert_failure 2
+    assert_output --partial "evidence.sh: unknown item 'bogus' (see --help)"
+    refute_output --partial 'M3 item 6.1'
+    [ ! -s "${FAKE_GH_LOG}" ]
+}
+
 @test "--list prints the three items and their group" {
     run "${EVIDENCE}" --list
     assert_success

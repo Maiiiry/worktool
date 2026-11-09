@@ -164,8 +164,14 @@ Options:
   -h, --help         Show this help and exit 0.
 
 Exit: 0 pass, 1 a check failed, 2 bad command line or missing --allow-real-box,
-3 a required tool is unavailable, the 5.1 bench is inconclusive, or 5.2
-needs an unlocked desktop with a usable display.
+3 inconclusive or not runnable here, when any of these holds:
+  - a required tool is unavailable (including 5.2.3's window tools);
+  - the 5.1 bench reports a busy host;
+  - 5.2 needs an unlocked desktop with a usable display;
+  - in 5.2, 5.2.2 or 5.2.3, the Ghostty window IPC is unavailable,
+    no new shell is confirmed before the window deadline,
+    or window ownership cannot be determined;
+  - a 5.4 bench cell is inconclusive (interrupt-matrix: INCONCLUSIVE).
 Cleanup failure takes precedence over an inconclusive bench (exit 1).
 EOF
 }

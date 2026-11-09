@@ -48,9 +48,10 @@
 #            already exists, ownership claimed before anything is created,
 #            and cleaned up on EXIT INT TERM HUP
 #            (_realbox_begin / _realbox_trap). Items 6.1 -
-#            6.3 are all group `gh`; the realbox guards are the contract the
-#            real-machine items (M3 5.1 / 5.2) plug into, and the dispatcher
-#            enforces them for any item declared realbox.
+#            6.3 are all group `gh`, so no item uses these guards today; the
+#            real-machine items 5.1 / 5.2 live in script/verify/realbox.sh
+#            with their own guards. The dispatcher still enforces the opt-in
+#            for any item declared realbox here.
 #
 # EXIT CODES.
 #   0  every selected item passed
@@ -871,7 +872,14 @@ main() {
                 _usage_error "unknown option '$1'"
                 return 2
                 ;;
-            *) _ids+=("$1") ;;
+            *)
+                # Refuse an unknown id here, before any selected item runs.
+                if [[ -z "${EVIDENCE_ITEM_GROUP[$1]:-}" ]]; then
+                    _usage_error "unknown item '$1'"
+                    return 2
+                fi
+                _ids+=("$1")
+                ;;
         esac
         shift
     done

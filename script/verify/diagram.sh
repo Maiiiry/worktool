@@ -381,8 +381,10 @@ _count_lines() {
 #
 # Every line is printed before it is judged, so a failing run still shows
 # the whole familiar block; the mismatches are then named on stderr and the
-# item fails. A missing input, an unreadable one or a broken grep aborts
-# BEFORE any line is printed - a partial block is not a result.
+# item fails. A missing input or an unreadable one aborts before any line
+# is printed. A broken grep found while scanning aborts with a non-zero
+# status after the lines already printed (at least svg=), so a partial
+# block can appear; the non-zero status, not the block, is the result.
 _item_4_1() {
     local _dir="${VERIFY_ROOT}/doc/diagram"
     local _readme="${VERIFY_ROOT}/README.md"

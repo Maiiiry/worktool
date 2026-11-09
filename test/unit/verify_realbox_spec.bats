@@ -695,6 +695,18 @@ FRAG
     assert_equal "$(_count_calls distrobox)" "0"
 }
 
+@test "#719: --help lists every inconclusive exit 3 the items return" {
+    run "${REALBOX}" --help
+    assert_success
+    assert_output --partial 'a required tool is unavailable'
+    assert_output --partial 'the 5.1 bench reports a busy host'
+    assert_output --partial '5.2 needs an unlocked desktop with a usable display'
+    assert_output --partial 'Ghostty window IPC is unavailable'
+    assert_output --partial 'no new shell is confirmed before the window deadline'
+    assert_output --partial 'window ownership cannot be determined'
+    assert_output --partial 'interrupt-matrix: INCONCLUSIVE'
+}
+
 @test "-h is the same as --help and exits 0" {
     run "${REALBOX}" -h
     assert_success

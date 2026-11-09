@@ -50,9 +50,8 @@
 #   - A check that cannot run here (no docker, no gh, no awk) is reported
 #     as UNAVAILABLE and exits non-zero. Nothing is ever skipped silently.
 #
-#   Like the other verify scripts it deliberately does NOT source
-#   lib/log.sh: it is the checker of the delivery, so it must not fail (or
-#   pass) because of the tree it is checking.
+#   Like the other verify scripts it sources lib/guard.sh, lib/log.sh and
+#   lib/verify_run.sh from the checkout it verifies.
 #
 # GROUPS
 #   Each item declares a group that names its preconditions:
