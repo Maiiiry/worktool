@@ -919,7 +919,7 @@ _52_apply_window_root() {
 }
 
 _52_find_window() {
-    # Reserve one second for the final bounded probe before the ten-second limit.
+    # Reserve one second of the ten-second search budget for the final bounded probe.
     local mode="$1" _52_DEADLINE=$((SECONDS + 9)) _52_ROWS apply_root rc nonfish=''
     local -A _52_PARENTS=() _52_COMMS=()
     while (( SECONDS < _52_DEADLINE )); do
