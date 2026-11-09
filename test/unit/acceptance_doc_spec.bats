@@ -471,6 +471,23 @@ _compare_52_doc() {
     assert_failure
 }
 
+@test "6.2: evidence documentation requires every cell to be exactly one" {
+    local section
+    section="$(sed -n '/^  - \[ \] 6\.2 /,/^  - \[ \] 6\.3 /p' "${REPO_ROOT}/doc/acceptance.md")"
+    [[ "${section}" == *"預期看到資訊(每格為 \`1\`)"* ]]
+    [[ "${section}" != *'每行數字 >= 1'* ]]
+}
+
+@test "6.3: evidence documentation lists every failure word" {
+    local section word
+    section="$(sed -n '/^  - \[ \] 6\.3 /,/^## M4 /p' "${REPO_ROOT}/doc/acceptance.md")"
+    for word in blocked NOT gh-failed no-codex BAD \
+        '#N no-follow-up' '#N no-fix-pr' '#N no-claude-comment' \
+        '#N grep-failed' '#N bad-fix-pr'; do
+        [[ "${section}" == *"\`${word}\`"* ]]
+    done
+}
+
 @test "#713: setup user-content coverage includes every seeded path" {
     local paragraph section item
     paragraph="$(sed -n '/受管檔案是.*使用者的/p' "${REPO_ROOT}/doc/acceptance.md")"

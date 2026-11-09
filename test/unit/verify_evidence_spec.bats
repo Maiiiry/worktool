@@ -124,6 +124,12 @@ _body_of() {
 # FAKE_GH_ONE_FOLLOWUP=1 points all four blocked PRs at the SAME follow-up
 # issue, so one issue and one fix PR answer for every one of them.
 _claude_of() {
+    if [ "${FAKE_GH_SWAP_FOLLOWUPS:-0}" = 1 ]; then
+        case "$1" in
+            152) printf '[claude] follow-up issue #164\n'; return 0 ;;
+            153) printf '[claude] follow-up issue #163\n'; return 0 ;;
+        esac
+    fi
     if [ "${FAKE_GH_ONE_FOLLOWUP:-0}" = 1 ]; then
         case "$1" in
             152 | 153 | 154 | 155)
@@ -146,7 +152,7 @@ _claude_of() {
 
 _codex_of() {
     case "$1" in
-        156 | 165 | 166 | 167 | 168 | 169) printf '[codex] review round 3\n可合併\n' ;;
+        156 | 165 | 166 | 167 | 168 | 169 | 170) printf '[codex] review round 3\n可合併\n' ;;
         152 | 153 | 154 | 155) printf '[codex] re-review after the quota came back\n不可合併\n' ;;
         *) printf 'null\n' ;;
     esac
@@ -177,7 +183,8 @@ case "$1" in
                     esac
                 done
                 case "${follow}" in
-                    163) out="166" ;;
+                    # A different merged, mergeable PR closes the right issue.
+                    163) if [ "${FAKE_GH_WRONG_FIX_PR:-0}" = 1 ]; then out="170"; else out="166"; fi ;;
                     164) out="165" ;;
                     162) out="169" ;;
                     161) out="168" ;;
@@ -743,16 +750,37 @@ STUB
     assert_line --index 11 "rc=0"
 }
 
+@test "6.3: swapped follow-ups fail even with four distinct valid chains" {
+    _stub_all_ok
+    FAKE_GH_SWAP_FOLLOWUPS=1 _run_evidence_item item_6_3
+    assert_failure
+    assert_line "#152 blocked -> follow-up #164 fixed-by PR #165 (closes #164, mergeable) BAD"
+    assert_line "#153 blocked -> follow-up #163 fixed-by PR #166 (closes #163, mergeable) BAD"
+    assert_line "distinct-follow-ups=4 distinct-fix-prs=4"
+    assert_line "rc=1"
+}
+
+@test "6.3: a wrong fix PR fails even with the correct follow-up and four distinct valid chains" {
+    _stub_all_ok
+    FAKE_GH_WRONG_FIX_PR=1 _run_evidence_item item_6_3
+    assert_failure 1
+    assert_line "#152 blocked -> follow-up #163 fixed-by PR #170 (closes #163, mergeable) BAD"
+    assert_line "#153 blocked -> follow-up #164 fixed-by PR #165 (closes #164, mergeable) ok"
+    assert_line "#154 blocked -> follow-up #162 fixed-by PR #169 (closes #162, mergeable) ok"
+    assert_line "#155 blocked -> follow-up #161 fixed-by PR #168 (closes #161, mergeable) ok"
+    assert_line "distinct-follow-ups=4 distinct-fix-prs=4"
+    assert_line "rc=1"
+}
+
 @test "6.3: one follow-up issue and one fix PR cannot answer for all four blocked PRs" {
     _stub_all_ok
     # Every row is internally consistent - blocked, a follow-up, a merged PR
-    # that closes it, a mergeable verdict on that PR - and prints `ok`. It is
-    # still the same issue and the same PR four times over, so three of the
-    # four sets of blockers were never recorded anywhere.
+    # that closes it, a mergeable verdict on that PR. Three rows violate the
+    # fixed pairings, and the distinct counters also expose the reuse.
     FAKE_GH_ONE_FOLLOWUP=1 _run_evidence_item item_6_3
     assert_failure
     assert_line "#152 blocked -> follow-up #163 fixed-by PR #166 (closes #163, mergeable) ok"
-    assert_line "#155 blocked -> follow-up #163 fixed-by PR #166 (closes #163, mergeable) ok"
+    assert_line "#155 blocked -> follow-up #163 fixed-by PR #166 (closes #163, mergeable) BAD"
     assert_line "distinct-follow-ups=1 distinct-fix-prs=1"
     assert_line "rc=1"
 }
