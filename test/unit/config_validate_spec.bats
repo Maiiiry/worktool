@@ -14,6 +14,8 @@
 #     the modules in its source graph (test/helper/graph.bash graph_judges),
 #     derived once per file in setup_file for each reader and shared by the
 #     cases; a failed or empty derivation fails every case that uses it;
+#     a new script that calls a reader is both derived and run through
+#     the matrix (a fixture tree, issue #774);
 #   - a verdict is the exit status, stdout and stderr; bare and `key=` must
 #     give byte-identical stdout and stderr files (cmp) and the same status;
 #     bare, empty and blank are refused (link: warned about and skipped), a
@@ -101,12 +103,13 @@ _judges() {
     cat "${_d}/$1"
 }
 
-# The command a judge script runs as: status and assemble as a user would
-# (assemble for real, against the fake manager); setup with --dry-run.
+# The command a judge script of tree TREE (default: this repo) runs as:
+# status and assemble as a user would (assemble for real, against the fake
+# manager); setup with --dry-run.
 _command() {
     case "$1" in
-        script/box/setup.sh) printf '%s\n' "${REPO_ROOT}/$1 --dry-run" ;;
-        *) printf '%s\n' "${REPO_ROOT}/$1" ;;
+        script/box/setup.sh) printf '%s\n' "${TREE:-${REPO_ROOT}}/$1 --dry-run" ;;
+        *) printf '%s\n' "${TREE:-${REPO_ROOT}}/$1" ;;
     esac
 }
 
@@ -127,7 +130,7 @@ _judge() {
     shift
     local -a _cmd
     read -r -a _cmd <<<"$*"
-    (cd "${REPO_ROOT}" && "${_cmd[@]}" >"${_p}.out" 2>"${_p}.err") || _rc=$?
+    (cd "${TREE:-${REPO_ROOT}}" && "${_cmd[@]}" >"${_p}.out" 2>"${_p}.err") || _rc=$?
     printf '%s\n' "${_rc}" >"${_p}.rc"
 }
 
@@ -135,9 +138,51 @@ _judge() {
 _assert_same() {
     local _x
     for _x in rc out err; do
-        cmp -s -- "$1.bare.${_x}" "$1.empty.${_x}" \
-            || fail "$2: bare and \`key=\` differ in ${_x}: $(diff "$1.bare.${_x}" "$1.empty.${_x}")"
+        cmp -s -- "$1.bare.${_x}" "$1.empty.${_x}" || {
+            fail "$2: bare and \`key=\` differ in ${_x}: $(diff "$1.bare.${_x}" "$1.empty.${_x}")"
+            return 1
+        }
     done
+}
+
+# The decision / home matrix over tree $1 with the judges derived into
+# directory $2, for the keys of readers $3..: every judge of a key, every
+# form, the same checks. It returns at the first failure, so it fails under
+# `run` too, where errexit is off.
+_value_matrix() {
+    local TREE="$1" JUDGES="$2" _k _r _v _c _s _form _p
+    local -A _of=()
+    shift 2
+    # Read here, in this shell, so an empty or failed derivation fails
+    # the matrix rather than running no judge.
+    for _r in "$@"; do _of[${_r}]="$(_judges "${_r}")" || return 1; done
+    mkdir -p "$(dirname -- "${CONFIG}")"
+    while IFS='|' read -r _k _r _v _c; do
+        [[ -n "${_of[${_r}]+x}" ]] || continue
+        while IFS= read -r _s; do
+            _p="${BATS_TEST_TMPDIR}/v.${_k}.${_s##*/}"
+            for _form in bare empty ws valid; do
+                rm -rf "${BOX}"
+                { _line "${_k}" "${_form}" "${_v}"; [[ -z "${_c}" ]] || printf '%s\n' "${_c}"; } >"${CONFIG}"
+                _judge "${_p}.${_form}" "$(_command "${_s}")"
+            done
+            _assert_same "${_p}" "${_k} via ${_s}" || return 1
+            if ! { [[ "$(cat "${_p}.empty.rc")" == 1 ]] &&
+                grep -qF "[ERROR] ${CONFIG}: invalid value '' for ${_k}" "${_p}.empty.err"; }; then
+                fail "${_k} via ${_s}: empty not refused: $(cat "${_p}.empty.err")"
+                return 1
+            fi
+            if ! { [[ "$(cat "${_p}.ws.rc")" == 1 ]] &&
+                grep -qF "[ERROR] ${CONFIG}: invalid value '  ' for ${_k}" "${_p}.ws.err"; }; then
+                fail "${_k} via ${_s}: whitespace not refused: $(cat "${_p}.ws.err")"
+                return 1
+            fi
+            if [[ "$(cat "${_p}.valid.rc")" != 0 ]]; then
+                fail "${_k} via ${_s}: valid value refused: $(cat "${_p}.valid.err")"
+                return 1
+            fi
+        done <<<"${_of[${_r}]}"
+    done < <(_keys)
 }
 
 @test "this spec is a required unit spec of test.sh" {
@@ -147,31 +192,7 @@ _assert_same() {
 }
 
 @test "bare key = empty value: every judged key, every judge, identical bytes; bare, empty and blank refused, valid accepted" {
-    local _k _r _v _c _s _form _p
-    local -A _of=()
-    # Read here, in this shell, so an empty or failed derivation fails
-    # the case rather than running no judge.
-    for _r in enter_config_check home_config_check; do _of[${_r}]="$(_judges "${_r}")"; done
-    mkdir -p "$(dirname -- "${CONFIG}")"
-    while IFS='|' read -r _k _r _v _c; do
-        while IFS= read -r _s; do
-            _p="${BATS_TEST_TMPDIR}/v.${_k}.${_s##*/}"
-            for _form in bare empty ws valid; do
-                rm -rf "${BOX}"
-                { _line "${_k}" "${_form}" "${_v}"; [[ -z "${_c}" ]] || printf '%s\n' "${_c}"; } >"${CONFIG}"
-                _judge "${_p}.${_form}" "$(_command "${_s}")"
-            done
-            _assert_same "${_p}" "${_k} via ${_s}"
-            [[ "$(cat "${_p}.empty.rc")" == 1 ]] \
-                && grep -qF "[ERROR] ${CONFIG}: invalid value '' for ${_k}" "${_p}.empty.err" \
-                || fail "${_k} via ${_s}: empty not refused: $(cat "${_p}.empty.err")"
-            [[ "$(cat "${_p}.ws.rc")" == 1 ]] \
-                && grep -qF "[ERROR] ${CONFIG}: invalid value '  ' for ${_k}" "${_p}.ws.err" \
-                || fail "${_k} via ${_s}: whitespace not refused: $(cat "${_p}.ws.err")"
-            [[ "$(cat "${_p}.valid.rc")" == 0 ]] \
-                || fail "${_k} via ${_s}: valid value refused: $(cat "${_p}.valid.err")"
-        done <<<"${_of[${_r}]}"
-    done < <(_keys)
+    _value_matrix "${REPO_ROOT}" "${BATS_FILE_TMPDIR}/judges" enter_config_check home_config_check
 }
 
 @test "bare key = empty value: link, every judge (bare, empty and blank warned about and skipped; a path linked)" {
@@ -233,6 +254,28 @@ EOF2
     JUDGES="${_d}" run _judges link_entries
     assert_failure
     assert_output --partial 'no script calls link_entries'
+}
+
+@test "a new script that calls a reader is run through the matrix" {
+    local _tree="${BATS_TEST_TMPDIR}/repo" _d="${BATS_TEST_TMPDIR}/judges" _log="${BATS_TEST_TMPDIR}/probe.log"
+    mkdir -p "${_tree}/script/x" "${_tree}/lib"
+    printf '%s\n' 'enter_config_check() { :; }' >"${_tree}/lib/enter.sh"
+    # A judge that accepts every value, and records each state file it saw.
+    cat >"${_tree}/script/x/probe.sh" <<'EOF2'
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../../lib/enter.sh"
+probe_run() { enter_config_check; head -n 1 "${HOME}/.config/worktool/config" >>"${PROBE_LOG}"; }
+probe_run
+EOF2
+    chmod +x "${_tree}/script/x/probe.sh"
+    _derive_judges "${_tree}" "${_d}"
+    PROBE_LOG="${_log}" run _value_matrix "${_tree}" "${_d}" enter_config_check
+    assert_failure
+    assert_output --partial 'auto-enter via script/x/probe.sh: empty not refused'
+    run cat "${_log}"
+    assert_success
+    assert_output "$(printf '%s\n' auto-enter auto-enter= 'auto-enter=  ' auto-enter=yes)"
 }
 
 # Last: by now both matrix cases have read their judges.
