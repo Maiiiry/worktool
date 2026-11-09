@@ -11,7 +11,9 @@
 #     script/ that calls the key's reader - enter_config_check for the
 #     decisions and their `.source`, home_config_check for home /
 #     home.source, link_entries for link - directly or through functions of
-#     the modules in its source graph (test/helper/graph.bash graph_judges);
+#     the modules in its source graph (test/helper/graph.bash graph_judges),
+#     derived once per file in setup_file for each reader and shared by the
+#     cases; a failed or empty derivation fails every case that uses it;
 #   - a verdict is the exit status, stdout and stderr; bare and `key=` must
 #     give byte-identical stdout and stderr files (cmp) and the same status;
 #     bare, empty and blank are refused (link: warned about and skipped), a
@@ -19,6 +21,35 @@
 
 load "${BATS_TEST_DIRNAME}/../helper/common"
 load "${BATS_TEST_DIRNAME}/../helper/graph"
+
+# The readers whose callers are the judges.
+READERS=(enter_config_check home_config_check link_entries)
+
+# graph_judges, run in a plain child bash: under bats' DEBUG trap the
+# helper's per-line bash loops are many times slower. Every call over this
+# repo is traced, so a case can check that the derivation ran once per
+# reader in this file.
+graph_judges() {
+    [[ "$1" != "${REPO_ROOT}" ]] || printf '%s\n' "$2" >>"${BATS_FILE_TMPDIR}/derivations"
+    bash -c 'source "$1" && shift && graph_judges "$@"' _ "${BATS_TEST_DIRNAME}/../helper/graph.bash" "$@"
+}
+
+# Derive the judges of every reader of tree $1 into directory $2: `<reader>`
+# holds the scripts, `<reader>.rc` the derivation's status. Never fails
+# itself, so a failed derivation reaches the cases as a failure, not a skip.
+_derive_judges() {
+    local _r _rc
+    mkdir -p "$2"
+    for _r in "${READERS[@]}"; do
+        _rc=0
+        graph_judges "$1" "${_r}" >"$2/${_r}" 2>"$2/${_r}.err" || _rc=$?
+        printf '%s\n' "${_rc}" >"$2/${_r}.rc"
+    done
+}
+
+setup_file() {
+    _derive_judges "${REPO_ROOT}" "${BATS_FILE_TMPDIR}/judges"
+}
 
 setup() {
     HOME="${BATS_TEST_TMPDIR}/home"
@@ -53,14 +84,21 @@ _keys() {
         "home.source|home_config_check|user|home=${BATS_TEST_TMPDIR}/box"
 }
 
-# The judges of reader function $1: every script that calls it, derived
-# from the source graph. An empty set fails the case instead of passing it
-# vacuously.
+# The judges of reader function $1: every script that calls it, as derived
+# into directory JUDGES (default: setup_file's). A missing or failed
+# derivation, or an empty set, fails the case instead of passing it
+# vacuously. It returns explicitly: under `run` errexit is off.
 _judges() {
-    local _j
-    _j="$(graph_judges "${REPO_ROOT}" "$1")" || fail "cannot derive the judges of $1"
-    [[ -n "${_j}" ]] || fail "no script calls $1"
-    printf '%s\n' "${_j}"
+    local _d="${JUDGES:-${BATS_FILE_TMPDIR}/judges}"
+    if [[ ! -f "${_d}/$1.rc" || "$(cat "${_d}/$1.rc")" != 0 ]]; then
+        fail "cannot derive the judges of $1: $(cat "${_d}/$1.err" 2>/dev/null)"
+        return 1
+    fi
+    if [[ ! -s "${_d}/$1" ]]; then
+        fail "no script calls $1"
+        return 1
+    fi
+    cat "${_d}/$1"
 }
 
 # The command a judge script runs as: status and assemble as a user would
@@ -110,9 +148,10 @@ _assert_same() {
 
 @test "bare key = empty value: every judged key, every judge, identical bytes; bare, empty and blank refused, valid accepted" {
     local _k _r _v _c _s _form _p
-    # Derived here, in this shell, so an empty or failed derivation fails
+    local -A _of=()
+    # Read here, in this shell, so an empty or failed derivation fails
     # the case rather than running no judge.
-    for _r in enter_config_check home_config_check; do _judges "${_r}" >/dev/null; done
+    for _r in enter_config_check home_config_check; do _of[${_r}]="$(_judges "${_r}")"; done
     mkdir -p "$(dirname -- "${CONFIG}")"
     while IFS='|' read -r _k _r _v _c; do
         while IFS= read -r _s; do
@@ -131,15 +170,16 @@ _assert_same() {
                 || fail "${_k} via ${_s}: whitespace not refused: $(cat "${_p}.ws.err")"
             [[ "$(cat "${_p}.valid.rc")" == 0 ]] \
                 || fail "${_k} via ${_s}: valid value refused: $(cat "${_p}.valid.err")"
-        done < <(_judges "${_r}")
+        done <<<"${_of[${_r}]}"
     done < <(_keys)
 }
 
 @test "bare key = empty value: link, every judge (bare, empty and blank warned about and skipped; a path linked)" {
-    local _s _form _p _t='~'
+    local _s _form _p _t='~' _of
+    _of="$(_judges link_entries)"
     # assemble reaches link_entries only through link_apply: the derivation
     # must follow that chain.
-    _judges link_entries | grep -qx script/box/assemble.sh \
+    grep -qx script/box/assemble.sh <<<"${_of}" \
         || fail "assemble is not derived as a judge of link"
     mkdir -p "$(dirname -- "${CONFIG}")" "${HOME}/.aws"
     while IFS= read -r _s; do
@@ -156,5 +196,48 @@ _assert_same() {
             || fail "link via ${_s}: whitespace not warned about: $(cat "${_p}.ws.err")"
         cat "${_p}.valid.out" "${_p}.valid.err" | grep -qF "${BOX}/.aws -> ${HOME}/.aws" \
             || fail "link via ${_s}: the path was not linked: $(cat "${_p}.valid.out" "${_p}.valid.err")"
-    done < <(_judges link_entries)
+    done <<<"${_of}"
+}
+
+@test "a failed, empty or missing derivation fails the case that uses it" {
+    local _d="${BATS_TEST_TMPDIR}/judges"
+    mkdir -p "${_d}"
+    printf '1\n' >"${_d}/enter_config_check.rc"
+    printf 'unresolved source line\n' >"${_d}/enter_config_check.err"
+    : >"${_d}/enter_config_check"
+    JUDGES="${_d}" run _judges enter_config_check
+    assert_failure
+    assert_output --partial 'cannot derive the judges of enter_config_check: unresolved source line'
+    printf '0\n' >"${_d}/home_config_check.rc"
+    : >"${_d}/home_config_check"
+    JUDGES="${_d}" run _judges home_config_check
+    assert_failure
+    assert_output --partial 'no script calls home_config_check'
+    JUDGES="${_d}" run _judges link_entries
+    assert_failure
+    assert_output --partial 'cannot derive the judges of link_entries'
+}
+
+@test "a new script that calls a reader is derived as its judge" {
+    local _tree="${BATS_TEST_TMPDIR}/repo" _d="${BATS_TEST_TMPDIR}/judges"
+    mkdir -p "${_tree}/script/x" "${_tree}/lib"
+    printf '%s\n' 'enter_config_check() { :; }' >"${_tree}/lib/enter.sh"
+    cat >"${_tree}/script/x/probe.sh" <<'EOF2'
+source "${SCRIPT_DIR}/../../lib/enter.sh"
+probe_run() { enter_config_check; }
+EOF2
+    _derive_judges "${_tree}" "${_d}"
+    JUDGES="${_d}" run _judges enter_config_check
+    assert_success
+    assert_output 'script/x/probe.sh'
+    JUDGES="${_d}" run _judges link_entries
+    assert_failure
+    assert_output --partial 'no script calls link_entries'
+}
+
+# Last: by now both matrix cases have read their judges.
+@test "the judges are derived once per file: one derivation per reader" {
+    run sort -- "${BATS_FILE_TMPDIR}/derivations"
+    assert_success
+    assert_output "$(printf '%s\n' "${READERS[@]}" | sort)"
 }
