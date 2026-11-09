@@ -494,15 +494,15 @@ _pl_blocked_run() {
     assert_output '[true,true,true,true,true]'
 }
 
-@test "pr-loop (node): Implement and Fix run only slice specs locally, then lint and changed before push" {
+@test "pr-loop (node): Implement and Fix run only slice specs locally, then lint and touched specs before push (#756)" {
     local implementer
     for implementer in codex claude; do
         run _pl_run "{\"implementer\":\"${implementer}\"}"
         assert_success
         run jq -e '[.calls[] | select(.role | startswith("implement:")) | .prompt |
             contains("just test <tier> <spec> [--filter]"),
-            (if contains("WORKTOOL_AGENT_ROLE=pr-loop") then contains("Run only slice specs and just test lint") else contains("before pushing run just test lint and just test changed") end),
-            contains("Never run a whole tier locally; CI runs every tier"),
+            (if contains("WORKTOOL_AGENT_ROLE=pr-loop") then contains("Run only slice specs and just test lint") else contains("before pushing run lint and only the touched specs") end),
+            contains("a whole tier locally; CI runs every tier"),
             (contains("just test unit, just test integration") | not)] | all' <<<"${output}"
         assert_success
         assert_output "true"
@@ -511,8 +511,8 @@ _pl_blocked_run() {
         assert_success
         run jq -e '[.calls[] | select(.role | startswith("fix:")) | .prompt |
             contains("just test <tier> <spec> [--filter]"),
-            (if contains("WORKTOOL_AGENT_ROLE=pr-loop") then contains("Run only slice specs and just test lint") else contains("before pushing run just test lint and just test changed") end),
-            contains("Never run a whole tier locally; CI runs every tier"),
+            (if contains("WORKTOOL_AGENT_ROLE=pr-loop") then contains("Run only slice specs and just test lint") else contains("before pushing run lint and only the touched specs") end),
+            contains("a whole tier locally; CI runs every tier"),
             (contains("just test unit, just test integration") | not)] | all' <<<"${output}"
         assert_success
         assert_output "true"
@@ -525,7 +525,7 @@ _pl_blocked_run() {
     assert_output --partial '完整取代預設推送前 gate'
     assert_output --partial "呼叫者須自行包含 \`just test lint\`"
     assert_output --partial '僅省略時採用預設'
-    assert_output --partial "\`just test lint\` 與 \`just test changed\`"
+    assert_output --partial "full 與 light 都是 \`just test lint\` 與改到的 spec"
     refute_output --partial '額外 gate'
 }
 
@@ -2442,12 +2442,12 @@ _discuss_replies() {
     assert_output '["compare-failed",0]'
 }
 
-@test "pr-loop CI fixes explicitly run only changed unit specs locally (#326)" {
+@test "pr-loop CI fixes explicitly run only lint and touched specs locally (#326, #756)" {
     run _pl_run
     assert_success
     run jq -r '.calls[] | select(.role == "ci:#7") | .prompt' <<<"${output}"
-    assert_output --partial 'Locally run only just test lint and changed unit specs'
-    assert_output --partial 'Never run matrix, integration, system, system-real, acceptance or a whole unit tier locally'
+    assert_output --partial 'Locally run only just test lint and touched specs'
+    assert_output --partial 'Never run just test changed or a whole tier locally; CI runs every tier'
 }
 
 
@@ -2650,10 +2650,8 @@ _scratch_assert_isolated() {
                 (.calls[] | select(.role | startswith("review:")) | .prompt |
                     contains("origin/m3/5-acceptance...HEAD")) and
                 ([.calls[].prompt | contains("origin/main") or contains("sync with main by merging")] | any | not) and
-                (.calls[] | select(.role | startswith("implement:")) | .prompt |
-                    if contains("before pushing run just test lint and just test changed") then
-                        contains("just test changed --base origin/m3/5-acceptance")
-                    else true end)
+                ([.calls[].prompt | select(contains("--diff-filter=ACMR"))] | length > 0 and
+                    all(test("git diff --name-only --diff-filter=ACMR [^ ]*origin/m3/5-acceptance[^ ]*[.][.][.]HEAD")))
             ' <<<"${json}"
             assert_success
         done
@@ -3606,7 +3604,8 @@ _pl_retry_run() {
     assert_success
     run jq -e '.error == null and .result.ciState == "green" and
         (.calls[] | select(.role | startswith("gates:")) | .effort == "low" and
-          (.prompt | contains("just job start") and contains("just job wait") and contains("just test changed"))) and
+          (.prompt | contains("just job start") and contains("just job wait") and contains("-- just test lint`") and
+            contains("--diff-filter=ACMR") and (contains("test changed") | not))) and
         ([.calls[].role] | index("gates:Implement") < index("publish:Implement"))' <<<"${output}"
     assert_success
 }
@@ -4981,4 +4980,49 @@ _pl_755_review_run() {
     run jq -e '.error == null and ([.logs[] | select(contains(" done:"))] |
         all(contains("reviewer=claude review=mergeable reviews=1")))' <<<"${output}"
     assert_success
+}
+
+@test "pr-loop default gates run lint and touched specs, never just test changed (#756)" {
+    _pl_light_gate_repo
+    local root="${BATS_TEST_TMPDIR}/light" extra json
+    for extra in '{"base":"acceptance"}' '{"base":"acceptance","mode":"light","codex":"off"}'; do
+        run _pl_run "${extra}"
+        assert_success
+        json="$output"
+        run jq -e '[.calls[] | select(.role | startswith("gates:")) | .prompt] | length > 0 and
+            all(contains("test changed") | not)' <<<"$json"
+        assert_success
+        jq -er '[.calls[] | select(.role | startswith("gates:"))][0] | .prompt |
+            [match("just job start \u0027[^\u0027]*\u0027 -- (.*?)` then"; "gm").captures[0].string] | join(" && ")' \
+            <<<"$json" > "${root}/gates.sh"
+        rm -f "${root}/calls"
+        run bash -c 'cd "$1" && PATH="$1/bin:$PATH" GATE_LOG="$1/calls" bash gates.sh' _ "${root}"
+        assert_success
+        run sort "${root}/calls"
+        assert_output 'test acceptance test/acceptance/nested/touched.bats
+test integration test/integration/nested/touched.bats
+test lint
+test matrix test/matrix/nested/touched.bats
+test system test/system/nested/touched.bats
+test unit test/unit/nested/touched.bats
+test unit test/unit/new spec.bats
+test unit test/unit/pending.bats'
+    done
+}
+
+@test "pr-loop default local test rules match across modes and implementers (#756)" {
+    local extra json
+    for extra in '{}' '{"implementer":"claude"}' '{"mode":"light","codex":"off"}'; do
+        run _pl_run "${extra}" '{"verdict":"blocked","defects":["broken"],"limitations":[],"suggestions":[],"answer":"x"}'
+        assert_success
+        json="$output"
+        run jq -e '([.calls[].prompt | contains("before pushing run just test lint and just test changed") or
+                contains("changed unit specs")] | any | not) and
+            ([.calls[] | select(.role | test("^(implement|fix):")) | .prompt |
+                if contains("WORKTOOL_AGENT_ROLE=pr-loop") then contains("Run only slice specs and just test lint")
+                else contains("before pushing run lint and only the touched specs") end] | all) and
+            ([.calls[] | select(.role | startswith("ci:")) | .prompt |
+                contains("Locally run only just test lint and touched specs")] | all)' <<<"$json"
+        assert_success
+    done
 }

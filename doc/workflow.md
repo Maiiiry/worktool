@@ -67,7 +67,7 @@ Workflow({ scriptPath: "/path/to/worktool/.claude/workflows/pr-loop.js", args: {
 | `name` | 是 | worktree 名稱(`../worktree/<name>`);各 PR 各自的 worktree,不互相干擾 |
 | `task` | 是 | 交給實作 agent 的完整任務描述 |
 | `runTag` | 是 | 呼叫端提供的唯一 run 標記；英數開頭，只含英數、底線或連字號。新 run（含以 `pr` 接續同一 worktree）必須換值，resume 同一 run 沿用原值；缺少或格式錯誤會在任何代理呼叫前拒絕 |
-| `gates` | 否 | 字串代表一整條 shell 指令（逗號保留）；多條指令用字串陣列，例如 `["just test lint", "just test changed"]`。傳入時完整取代預設推送前 gate，呼叫者須自行包含 `just test lint`；僅省略時採用預設：full 為 `just test lint` 與 `just test changed`，light 為 lint 與改到的 spec；不得用它要求本機跑整個 tier |
+| `gates` | 否 | 字串代表一整條 shell 指令（逗號保留）；多條指令用字串陣列，例如 `["just test lint", "just test changed"]`。傳入時完整取代預設推送前 gate，呼叫者須自行包含 `just test lint`；僅省略時採用預設：full 與 light 都是 `just test lint` 與改到的 spec（推送前本機 gate 的定義見 [ADR-0014](adr/0014-local-tests-changed-only.md) 決策 2）；`just test changed` 是選用指令，需要時以 `gates` 明確指定；不得用它要求本機跑整個 tier |
 | `mode` | 否 | `full`（預設）或 `light`；其他值直接 throw。light 固定由 Claude 修改與另一個 Claude 子代理審查，不呼叫 codex |
 | `implementer` | 否 | `codex`(預設)或 `claude`;實作與 Fix 由這一方執行，Review 永遠由另一方執行 |
 | `codex` | 否 | 只接受 `on`(預設)/ `off`(配額暫停:改在 PR 留 `[claude]` 註記,不冒充 codex);其他值直接報錯 |
@@ -171,7 +171,7 @@ light 不受 `implementer` 的選擇影響，也不因 `codex: "off"` 留配額�
 
 1. **Implement**:agent 在自己的 worktree(`git worktree add -b <branch> <repoDir>/../worktree/<name> origin/main`)依 TDD 做:
    先寫測試看到 RED,再實作到 GREEN;每個 TDD 切片只在 Docker 內跑該 spec（`just test <tier> <spec...> [--filter REGEX]`）；
-   push 前阻塞執行 `just test lint` 與 `just test changed`。本機不跑整個 tier；全部 tier 由 CI 執行；
+   push 前跑 `just test lint` 與改到的 spec（見 ADR-0014 決策 2）。本機不跑整個 tier；全部 tier 由 CI 執行；
    開 PR(zh-TW 描述:`Closes #N`、`Part of`、「這個 PR 只做一件事」、commit 清單、「測試證據」)。
    Locate 找到 PR 後，以腳本讀取 `git status --porcelain`、本地 HEAD、`git ls-remote` 的遠端分支 HEAD 與 PR head；工作區必須乾淨，三個 HEAD 必須相同。檢查失敗就以 `blockingLeft` 附上狀態與 HEAD 比較，不進入 CI。
 2. **Locate**:agent 以 `gh pr list --head <branch>` 結構化回傳 PR 編號與 head SHA(不從自由文字猜)。
