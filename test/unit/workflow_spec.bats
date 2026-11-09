@@ -4974,6 +4974,54 @@ _pl_755_review_run() {
     assert_success
 }
 
+# Full run where the Claude review finds a defect; $1 = extra args, $2 = extra replies.
+_pl_769_defect_run() {
+    local replies
+    replies='{"implement:":{"status":"ready","reason":""},
+        "stage-check:Implement":{"evidence":"{\"status\":\"\",\"localHead\":\"abc\",\"remoteHead\":\"abc\",\"prHead\":\"abc\",\"errors\":\"\"}"},
+        "stage-check:Fix":{"evidence":"{\"status\":\"\",\"localHead\":\"def\",\"remoteHead\":\"def\",\"prHead\":\"def\",\"errors\":\"\"}"},
+        "locate:":{"pr":7,"sha":"abc"},"ci:":{"state":"green","sha":"abc","detail":""},
+        "review:":{"verdict":"blocked","defects":["broken"],"limitations":[],"suggestions":[],"answer":"x"}}'
+    replies="$(jq -c --argjson extra "$2" '. + $extra' <<<"${replies}")"
+    node "${REPO_ROOT}/test/unit/fixture/workflow_run.mjs" "${PR_LOOP}" \
+        "$(jq -cn --argjson extra "$1" '{runTag:"test-run",repo:"o/r",repoDir:"/work",issue:283,branch:"b",name:"n",task:"t"} + $extra')" \
+        "${replies}"
+}
+
+@test "pr-loop reports not-run when a Claude review ends the loop with defects left (#769)" {
+    run _pl_769_defect_run '{"maxRounds":0}' '{}'
+    assert_success
+    run jq -e '.error == null and .result.reviewer == "claude" and .result.reviewVerdict == "blocked" and
+        .result.codexVerdict == "not-run" and .result.blockingLeft == ["broken"]' <<<"${output}"
+    assert_success
+}
+
+@test "pr-loop reports blocked on a flow abort after a Claude review (#769)" {
+    local extra
+    for extra in \
+        '{"stage-check:Fix":{"evidence":"{\"status\":\"\",\"localHead\":\"def\",\"remoteHead\":\"def\",\"prHead\":\"def\",\"errors\":\"boom\"}"}}' \
+        '{"ci:":[{"state":"green","sha":"abc","detail":""},{"state":"red","sha":"def","detail":"red after fix"}]}'; do
+        run _pl_769_defect_run '{"maxRounds":1}' "${extra}"
+        assert_success
+        run jq -e '.error == null and .result.reviewer == "claude" and .result.reviews == 1 and
+            .result.codexVerdict == "blocked" and (.result.blockingLeft | length > 0)' <<<"${output}"
+        assert_success
+    done
+}
+
+@test "doc/workflow.md and the pr-loop header state when a Claude review yields not-run or blocked (#769)" {
+    run grep -F "一律是 \`not-run\`" "${REPO_ROOT}/doc/workflow.md"
+    assert_failure
+    run grep -F '審查迴圈正常結束時' "${REPO_ROOT}/doc/workflow.md"
+    assert_success
+    assert_output --partial "\`codexVerdict\` 是 \`not-run\`"
+    assert_output --partial "流程中止時回 \`blocked\`，與審查者無關"
+    run grep -F '"not-run" when a Claude review ends the loop' "${PR_LOOP}"
+    assert_success
+    run grep -F '"blocked" on any flow abort' "${PR_LOOP}"
+    assert_success
+}
+
 @test "milestone-fanout logs the reviewer and review verdict of each child (#755)" {
     run _fanout_batches '{}'
     assert_success
