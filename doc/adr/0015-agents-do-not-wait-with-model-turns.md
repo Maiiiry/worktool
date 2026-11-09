@@ -3,6 +3,7 @@
 - 狀態：已採納（2026-10-12）
 - 討論：#550；問題證據：#541 的修正紀錄
 - 依據 ADR-0007（永不靜默失敗）、ADR-0008（just 唯一入口）與 ADR-0010（黑箱可驗）；配合 ADR-0014：保留切片測試與推送前 gate，改變長工作的執行與結果交接方式。
+- 修訂：2026-11-09，依 #756 更新對 ADR-0014 推送前 gate 的引用（lint 加改到的 spec，`just test changed` 改為選用）。
 
 ## 背景
 
@@ -18,6 +19,6 @@
 
 ## 影響與限制
 
-ADR-0014 的推送前 lint 與 changed 要求不變，pr-loop 由 workflow 承擔長 gate。依 #554，Claude 一般 session 的長工作仍須符合既有 timeout 規則；實作端 CLI 的 PreToolUse 輸入以 `turn_id` 欄位辨識，shell `tool_input` 只有 `command`，因此不套用 Claude 專屬時間上限要求，由外層 runner 限時。兩種來源的輪詢封鎖與 pr-loop 角色限制相同；若 CLI 日後改變輸入格式，來源判斷可能失準。角色標記能被 unset；直譯器、字串拼接與自訂腳本包住的等待不在檢查範圍內。這是工作分工約束，並非防止惡意繞過的安全邊界。
+ADR-0014 的推送前本機 gate（依 #756 修訂為 lint 加改到的 spec）不變，pr-loop 由 workflow 承擔長 gate。依 #554，Claude 一般 session 的長工作仍須符合既有 timeout 規則；實作端 CLI 的 PreToolUse 輸入以 `turn_id` 欄位辨識，shell `tool_input` 只有 `command`，因此不套用 Claude 專屬時間上限要求，由外層 runner 限時。兩種來源的輪詢封鎖與 pr-loop 角色限制相同；若 CLI 日後改變輸入格式，來源判斷可能失準。角色標記能被 unset；直譯器、字串拼接與自訂腳本包住的等待不在檢查範圍內。這是工作分工約束，並非防止惡意繞過的安全邊界。
 
 hook 與 job 的 Docker spec 驗證公開行為；workflow spec 驗證 stage 交接與提示契約。合併後依 #550 在實際 harness 驗證 subagent 拒絕輪詢、workflow codex 拒絕 changed，以及一般驗收路徑仍可使用，結果貼於 PR。
