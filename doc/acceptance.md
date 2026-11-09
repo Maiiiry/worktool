@@ -543,7 +543,7 @@ verify all: VERDICT PASS (5/5 groups: ui gate setup diagram evidence; realbox no
 rc=0
 ```
 
-(每組自己的預期輸出照常穿插在它的摘要行之前,逐項對照見下面各項;上面只列 `all.sh` 自己印的摘要與判決。任一組失敗時,那一組印 `verify all: <組> FAIL (rc=N)`(跑不動則 `UNAVAILABLE (rc=3)`),接著 `verify all: VERDICT FAIL at <組> (rc=N); passed: ...; not run: ...`,後面的組不再跑,整段 rc 非 0。5 另外以 `just verify realbox --allow-real-box ...` 在實機上跑。)
+(每組自己的預期輸出照常穿插在它的摘要行之前,逐項對照見下面各項;上面只列 `all.sh` 自己印的摘要與判決。任一組失敗時,那一組印 `verify all: <組> FAIL (rc=N)`(跑不動或該組判定未定,例如 2.1 延遲 gate 未判定,則 `UNAVAILABLE (rc=3)`),接著 `verify all: VERDICT FAIL at <組> (rc=N); passed: ...; not run: ...`,後面的組不再跑,整段 rc 非 0。5 另外以 `just verify realbox --allow-real-box ...` 在實機上跑。)
 
 3 與 5 的輸出含機器相關路徑,下面以 `<H>`(臨時 HOME)、`<D>`(host 上 distrobox 執行檔的絕對路徑,例如 `/usr/local/bin/distrobox`)、`<G>`(host 上 ghostty 執行檔的絕對路徑,`command -v ghostty` 的結果)代表。3 的每一項由 `script/verify/setup.sh` 自己算出這幾個路徑、再把輸出裡的它們換成佔位符,所以 3 的預期輸出在任何安裝位置都逐字相符(round 10:更早的版本把 ghostty 路徑寫死成 `/usr/bin/ghostty`,裝在別處的機器會無故變紅);5 的輸出沒有這層轉換,請自己對照。
 

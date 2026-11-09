@@ -31,7 +31,8 @@
 #   1  a group failed (any non-zero status other than 3, or its script is
 #      missing / not executable)
 #   2  usage error (unknown option, unexpected argument)
-#   3  a group could not run here (it exited 3, UNAVAILABLE)
+#   3  a group could not run here or its verdict is inconclusive (it
+#      exited 3, e.g. the 2.1 latency gate is inconclusive), UNAVAILABLE
 #
 # Use errexit per doc/adr/0001-scripts-use-errexit.md. Expected non-zero
 # statuses are captured explicitly to preserve the exit-code contract.
@@ -86,7 +87,8 @@ Each group's own output passes through. After each group a summary line
 the run ends with one `verify all: VERDICT ...` line.
 
 Exit codes: 0 every group passed, 1 a group failed, 2 usage error, 3 a
-group could not run here (UNAVAILABLE - never a silent skip).
+group could not run here or its verdict is inconclusive, e.g. the 2.1
+latency gate (UNAVAILABLE - never a silent skip).
 EOF
 }
 
