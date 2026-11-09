@@ -36,7 +36,8 @@
 #
 # This is a library: it defines functions and must be sourced, not executed.
 # It sources lib/enter.sh (same dir), which brings lib/config.sh, the state
-# file's one reader/writer, and lib/distrobox_manager.sh for manager resolution.
+# file's one reader/writer. It also sources lib/distrobox_manager.sh (same
+# dir) for manager resolution.
 
 # shellcheck source-path=SCRIPTDIR
 _HOME_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"

@@ -543,7 +543,7 @@ verify all: VERDICT PASS (5/5 groups: ui gate setup diagram evidence; realbox no
 rc=0
 ```
 
-(每組自己的預期輸出照常穿插在它的摘要行之前,逐項對照見下面各項;上面只列 `all.sh` 自己印的摘要與判決。任一組失敗時,那一組印 `verify all: <組> FAIL (rc=N)`(跑不動則 `UNAVAILABLE (rc=3)`),接著 `verify all: VERDICT FAIL at <組> (rc=N); passed: ...; not run: ...`,後面的組不再跑,整段 rc 非 0。5 另外以 `just verify realbox --allow-real-box ...` 在實機上跑。)
+(每組自己的預期輸出照常穿插在它的摘要行之前,逐項對照見下面各項;上面只列 `all.sh` 自己印的摘要與判決。任一組失敗時,那一組印 `verify all: <組> FAIL (rc=N)`(跑不動或該組判定未定,例如 2.1 延遲 gate 未判定,則 `UNAVAILABLE (rc=3)`),接著 `verify all: VERDICT FAIL at <組> (rc=N); passed: ...; not run: ...`,後面的組不再跑,整段 rc 非 0。5 另外以 `just verify realbox --allow-real-box ...` 在實機上跑。)
 
 3 與 5 的輸出含機器相關路徑,下面以 `<H>`(臨時 HOME)、`<D>`(host 上 distrobox 執行檔的絕對路徑,例如 `/usr/local/bin/distrobox`)、`<G>`(host 上 ghostty 執行檔的絕對路徑,`command -v ghostty` 的結果)代表。3 的每一項由 `script/verify/setup.sh` 自己算出這幾個路徑、再把輸出裡的它們換成佔位符,所以 3 的預期輸出在任何安裝位置都逐字相符(round 10:更早的版本把 ghostty 路徑寫死成 `/usr/bin/ghostty`,裝在別處的機器會無故變紅);5 的輸出沒有這層轉換,請自己對照。
 
@@ -599,6 +599,7 @@ PR #157 範圍條目（一行一條，依位元組序排序，即 `LC_ALL=C sort
 - `test/unit/config_mutation_spec.bats`
 - `test/unit/config_owner_spec.bats`
 - `test/unit/config_spec.bats`
+- `test/unit/config_validate_spec.bats`
 - `test/unit/contract_spec.bats`
 - `test/unit/diagram_spec.bats`
 - `test/unit/enter_doc_spec.bats`
@@ -1335,7 +1336,7 @@ PR #157 範圍條目（一行一條，依位元組序排序，即 `LC_ALL=C sort
       rc=0
       ```
       (失敗時的樣子:判定是「不可合併」印 `blocked`、沒有判定行印 `NOT`、沒有 [codex] 留言印 `no-codex`、`gh` 查詢本身失敗印 `gh-failed`,配對不符上述固定表或判定鏈不成立是行尾 `BAD`,沒有 [claude] 留言印 `#N no-claude-comment`,擷取 follow-up 失敗印 `#N grep-failed`,查不到對應關係是 `#N no-follow-up` / `#N no-fix-pr`,修正 PR 編號格式錯誤印 `#N bad-fix-pr`,最後都 `rc=1`。
-      `distinct-follow-ups` / `distinct-fix-prs` 必須都是 4:四個被擋的 PR 各要有**自己的** follow-up issue 與修正 PR。這兩個計數跨整個項目累計,不是每個 PR 重新算一次 —— 只檢查每行關係自洽與唯一性仍不夠，還必須比對上述固定配對；重用同一個 issue 加同一個 PR 時，不符合固定配對的行印 `BAD`，計數也會不足 4。round 12:舊版的 `v()` 是 `gh ... | grep ... | tail -1`,結束碼來自 `tail`,所以「印得出判定行卻 exit 1 的 gh」會讓六個 PR 全部讀成 mergeable —— 現在 gh 的輸出先收進變數、先判它自己的結束碼,`gh-failed` 因此和「判定不是可合併」分得開)
+      `distinct-follow-ups` / `distinct-fix-prs` 必須都是 4:四個被擋的 PR 各要有**自己的** follow-up issue 與修正 PR。這兩個計數跨整個項目累計,不是每個 PR 重新算一次 —— 只檢查每行關係自洽與唯一性仍不夠,還必須比對上述固定配對;重用同一個 issue 加同一個 PR 時,不符合固定配對的行印 `BAD`,計數也會不足 4。round 12:舊版的 `v()` 是 `gh ... | grep ... | tail -1`,結束碼來自 `tail`,所以「印得出判定行卻 exit 1 的 gh」會讓六個 PR 全部讀成 mergeable —— 現在 gh 的輸出先收進變數、先判它自己的結束碼,`gh-failed` 因此和「判定不是可合併」分得開)
     - 驗收方式
       ```bash
       just verify evidence 6.3; echo rc=$?
