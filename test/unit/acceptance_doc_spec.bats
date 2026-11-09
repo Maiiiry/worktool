@@ -547,3 +547,23 @@ _compare_52_doc() {
     [[ "${doc}" == *'成員仍存活或 session 檢查無法判定時，保留目錄並回非零'* ]]
     [[ "${doc}" != *'最後一次外部探測最多 1 秒，因此總上限為 5 秒'* ]]
 }
+
+@test "acceptance tool list names what the verify scripts require (#718)" {
+    local tools rule
+    tools="$(sed -n '/^- 驗收工具:/p' "${REPO_ROOT}/doc/acceptance.md")"
+    [[ -n "${tools}" ]] || return 1
+    # gh: gate 2.2, realbox 5.1 / 5.3, evidence 6.1-6.3.
+    [[ "${tools}" == *"\`gh\`(已登入,2.2 / 5.1 / 5.3 / 6.1-6.3 用)"* ]]
+    # jq: realbox 5.1 / 5.3, evidence 6.1 / 6.3 (6.2 does not need it).
+    [[ "${tools}" == *"\`jq\`(5.1 / 5.3 / 6.1 / 6.3 用)"* ]]
+    # Tools outside coreutils, each with the items that require them.
+    [[ "${tools}" == *"\`find\`(findutils;3.1 / 3.4 / 3.10-3.13 / 5.2 / 5.3 用)"* ]]
+    [[ "${tools}" == *"\`diff\`(diffutils;3.4 用)"* ]]
+    [[ "${tools}" == *"\`cmp\`(diffutils;3.10-3.13 / 5.2 / 5.3 用)"* ]]
+    [[ "${tools}" == *"\`flock\`(util-linux;3.5 用)"* ]]
+    [[ "${tools}" == *"\`ps\`(procps;5.2 / 5.3 用)"* ]]
+    [[ "${tools}" != *'(coreutils + awk)'* ]]
+    rule="$(sed -n "/^規則:入口一律 \`just\`/p" "${REPO_ROOT}/doc/acceptance.md")"
+    [[ -n "${rule}" ]] || return 1
+    [[ "${rule}" == *'驗收工具(timeout / gh / jq / grep)查'* ]]
+}
