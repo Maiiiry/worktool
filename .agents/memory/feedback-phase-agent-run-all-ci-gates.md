@@ -10,7 +10,8 @@ metadata:
 
 Local test runs cover only what the change touches: `just test lint` plus the
 specs the change adds or edits (`just test <tier> <spec...> [--filter REGEX]`,
-#298), and before pushing `just test changed` (#299). Every full tier (unit,
+#298); since 2026-11-09 (#756, ADR-0014 decision 2) `just test changed` is no
+longer run before pushing (it stays an optional command). Every full tier (unit,
 matrix, integration, system, acceptance, system-real) runs in GitHub CI, where
 `ci-passed` is required. Never run a whole tier locally per TDD slice.
 
