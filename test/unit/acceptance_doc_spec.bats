@@ -4,69 +4,14 @@ load "${BATS_TEST_DIRNAME}/../helper/common"
 
 bats_require_minimum_version 1.5.0
 
-@test "#691: acceptance scope credits the first-start fix to PR 693" {
-    local paragraph
+@test "acceptance PR 157 scope leaves per-PR sources to the PR 157 description (#730)" {
+    local paragraph numbers
     paragraph="$(sed -n '/^本 PR(#157)/p' "${REPO_ROOT}/doc/acceptance.md")"
-    [[ "${paragraph}" == *'本輪 #691／PR #693 的首次初始化修正涉及'* ]]
-    [[ "${paragraph}" != *'修正子 PR 由發布流程補記'* ]]
-}
-
-@test "acceptance PR 157 scope credits interrupt, pairing and verbatim fixes (#659)" {
-    local paragraph entry path credit
-    paragraph="$(sed -n '/^本 PR(#157)/p' "${REPO_ROOT}/doc/acceptance.md")"
-    while read -r path credit; do
-        entry="${paragraph#*\`"${path}"\`（}"
-        [[ "${entry}" != "${paragraph}" ]]
-        entry="${entry%%）*}"
-        [[ "${entry}" == *"${credit}"* ]]
-    done <<'CREDITS'
-lib/realbox_interrupt.sh #657／PR #661
-doc/acceptance.md #659／PR #662
-test/unit/acceptance_doc_spec.bats #659／PR #662
-CREDITS
-    entry="${paragraph#*驗收程式與入口}"
-    entry="${entry%%逾時清理共用程式*}"
-    [[ "${entry}" == *'#658／PR #660'*"\`evidence.sh\` 6.1"* ]]
-    entry="${paragraph#*\`test/unit/verify_*_spec.bats\`}"
-    entry="${entry%%\`test/unit/test_sh_spec.bats\`*}"
-    [[ "${entry}" == *"\`verify_realbox_matrix_spec.bats\`"*'#657／PR #661'*'修正，'* ]]
-    [[ "${entry}" == *"\`verify_evidence_spec.bats\`"*'#658／PR #660'*'修正'* ]]
-    [[ "${entry}" == *"\`verify_setup_spec.bats\` 的 #659／PR #662"* ]]
-}
-
-@test "acceptance PR 157 scope credits the lint discovery fix on every touched entry (#655)" {
-    local paragraph entry path
-    paragraph="$(sed -n '/^本 PR(#157)/p' "${REPO_ROOT}/doc/acceptance.md")"
-    for path in script/test/test.sh test/unit/test_sh_spec.bats \
-        doc/acceptance.md test/unit/acceptance_doc_spec.bats; do
-        entry="${paragraph#*\`"${path}"\`（}"
-        [[ "${entry}" != "${paragraph}" ]]
-        entry="${entry%%）*}"
-        [[ "${entry}" == *'#655／PR #656'* ]]
-    done
-}
-
-@test "acceptance PR 157 scope credits the signal and evidence fixes (#651)" {
-    local paragraph entry
-    paragraph="$(sed -n '/^本 PR(#157)/p' "${REPO_ROOT}/doc/acceptance.md")"
-    entry="${paragraph#*逾時清理共用程式}"
-    entry="${entry%%中斷矩陣共用程式*}"
-    [[ "${entry}" == *'#647／PR #649'* ]]
-    entry="${paragraph#*驗收程式與入口}"
-    entry="${entry%%逾時清理共用程式*}"
-    [[ "${entry}" == *'#648／PR #650'*"\`evidence.sh\`"* ]]
-    entry="${paragraph#*\`test/unit/verify_*_spec.bats\`}"
-    entry="${entry%%\`test/unit/test_sh_spec.bats\`*}"
-    [[ "${entry}" == *"\`verify_run_signal_spec.bats\`"*'#647／PR #649'* ]]
-    [[ "${entry}" == *"\`verify_evidence_spec.bats\`"*'#648／PR #650'* ]]
-    entry="${paragraph#*\`doc/acceptance.md\`}"
-    entry="${entry%%\`doc/evidence/README.md\`*}"
-    [[ "${entry}" == *'#651／PR #652'* ]]
-    [[ "${entry}" == *'#653／PR #654'* ]]
-    entry="${paragraph#*\`test/unit/acceptance_doc_spec.bats\`}"
-    entry="${entry%%\`test/unit/assemble_spec.bats\`*}"
-    [[ "${entry}" == *'#651／PR #652'* ]]
-    [[ "${entry}" == *'#653／PR #654'* ]]
+    [[ -n "${paragraph}" ]] || return 1
+    [[ "${paragraph}" == *'逐 PR 的來源見 PR #157 說明'* ]]
+    # Any issue or PR number other than #157 itself is a per-PR source note.
+    numbers="$(grep -oE '#[0-9]+' <<<"${paragraph}" | sort -u)"
+    assert_equal "${numbers}" '#157'
 }
 
 @test "acceptance 2.1 documents exactly the runner CPU skip exemptions (#575)" {
@@ -314,63 +259,15 @@ _assert_realbox_doc_streams() {
     assert_output --partial '[INFO] shell median'
 }
 
-_assert_51_credits() {
-    local paragraph entry path
-    paragraph="$(sed -n '/^本 PR(#157)/p' "$1")"
-    for path in doc/acceptance.md test/unit/acceptance_doc_spec.bats; do
-        entry="${paragraph#*\`"${path}"\`（}"
-        [[ "${entry}" != "${paragraph}" ]] || return 1
-        entry="${entry%%）*}"
-        [[ "${entry}" =~ \#666／PR[[:space:]]\#682([^0-9]|$) ]] || return 1
-    done
-    [[ "${paragraph}" == *"\`script/box/justfile.box\`；#665／PR #673"* ]] || return 1
-    [[ "${paragraph}" != *'665-review-round'* ]] || return 1
+@test "acceptance keeps the box interface wording (#666)" {
     run grep -F '(M3 adds enter / rm)' "${REPO_ROOT}/doc/acceptance.md"
-    assert_failure 1 || return 1
+    assert_failure 1
     run grep -F "recipe 名稱與說明以根目錄 \`justfile\`、\`script/box/justfile.box\`、\`script/test/justfile.test\` 為唯一來源" "${REPO_ROOT}/doc/acceptance.md"
     assert_success
 }
 
-@test "acceptance PR 157 credits the 5.1 output correction and preserves the box interface (#666)" {
-    _assert_51_credits "${REPO_ROOT}/doc/acceptance.md"
-}
-
-@test "acceptance 5.1 credits reject missing box interface credit (#666)" {
-    local doc="${BATS_TEST_TMPDIR}/acceptance.md"
-    sed "s@\`script/box/justfile.box\`；#665／PR #673@\`script/box/justfile.box\`；missing@" \
-        "${REPO_ROOT}/doc/acceptance.md" >"${doc}"
-    run _assert_51_credits "${doc}"
-    assert_failure
-}
-
-@test "acceptance 5.1 credits reject a different PR or a longer PR number (#666)" {
-    local wrong doc="${BATS_TEST_TMPDIR}/acceptance.md"
-    for wrong in 681 6820; do
-        sed "s/#666／PR #682/#666／PR #${wrong}/g" "${REPO_ROOT}/doc/acceptance.md" >"${doc}"
-        run _assert_51_credits "${doc}"
-        assert_failure
-    done
-}
-
-@test "acceptance PR 157 credits the stale rm description fix on every touched entry (#666)" {
-    local paragraph entry path
-    paragraph="$(sed -n '/^本 PR(#157)/p' "${REPO_ROOT}/doc/acceptance.md")"
-    for path in justfile doc/structure.md doc/design.md doc/acceptance.md \
-        test/unit/justfile_spec.bats; do
-        entry="${paragraph#*\`"${path}"\`（}"
-        [[ "${entry}" != "${paragraph}" ]]
-        entry="${entry%%）*}"
-        [[ "${entry}" == *'#665／PR #673'* ]]
-    done
-    [[ "${paragraph}" == *"\`script/box/justfile.box\`；#665／PR #673"* ]]
-}
-
-@test "acceptance 5.2 documents automation and credits every #663 file" {
-    local paragraph section entry
-    paragraph="$(sed -n '/^本 PR(#157)/p' "${REPO_ROOT}/doc/acceptance.md")"
-    for entry in 'realbox.sh' 'verify_realbox_spec.bats' 'doc/acceptance.md' 'test/unit/acceptance_doc_spec.bats'; do
-        [[ "${paragraph}" == *"\`${entry}\`（#663／PR #668"* ]]
-    done
+@test "acceptance 5.2 documents automation (#663)" {
+    local section
     section="$(sed -n '/^  - \[ \] 5\.2 開終端/,/^  - \[ \] 5\.3 先建/p' "${REPO_ROOT}/doc/acceptance.md")"
     [[ "${section}" == *'Ghostty 1.3.1'*'reload-config'* ]]
     [[ "${section}" == *'ghostty +new-window'* ]]
