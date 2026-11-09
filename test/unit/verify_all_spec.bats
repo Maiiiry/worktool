@@ -55,11 +55,12 @@ load "${BATS_TEST_DIRNAME}/../helper/common"
 }
 
 @test "acceptance: PR 157 scope includes verification, product support and tests" {
-    local _scope _path
-    _scope="$(sed -n '/^本 PR(#157)/p' "${REPO_ROOT}/doc/acceptance.md")"
-    run printf '%s\n' "${_scope}"
+    local _scope _entries _path
+    _entries="$(_pr157_scope_entries "${REPO_ROOT}/doc/acceptance.md")"
     for _path in 'doc/acceptance.md' 'doc/design.md' 'doc/enter.md' \
-        'doc/manifest.md' 'doc/evidence/README.md' 'ADR 0008' '0010' \
+        'doc/manifest.md' 'doc/evidence/README.md' \
+        'doc/adr/0008-invariant-minimal-interface.md' \
+        'doc/adr/0010-invariant-black-box-verifiable.md' \
         'script/verify/' 'lib/verify_run.sh' 'lib/realbox_interrupt.sh' \
         'justfile' \
         'lib/config_backup.sh' 'lib/guard.sh' \
@@ -68,8 +69,11 @@ load "${BATS_TEST_DIRNAME}/../helper/common"
         'script/test/test.sh' 'test/unit/verify_*_spec.bats' \
         'test/unit/justfile_spec.bats' 'test/unit/fixture/' 'test/helper/' \
         'test/system/real_engine_spec.bats'; do
-        assert_output --partial "${_path}"
+        run grep -Fx -- "${_path}" <<<"${_entries}"
+        assert_success
     done
+    _scope="$(sed -n '/^本 PR(#157)/p' "${REPO_ROOT}/doc/acceptance.md")"
+    run printf '%s\n' "${_scope}"
     refute_output --partial '不動產品程式'
     refute_output --partial '要驗的產品程式全在 main'
 }
@@ -110,11 +114,115 @@ _scope_covers_path() {
 # Docker runs as root while CI's checkout belongs to the runner user.
 # Trust only this checkout, without changing persistent Git configuration.
 _scope_git() {
-    git -c safe.directory="${REPO_ROOT}" -C "${REPO_ROOT}" "$@"
+    _scope_git_in "${REPO_ROOT}" "$@"
+}
+
+_scope_git_in() {
+    local _dir="$1"
+    shift
+    git -c safe.directory="${_dir}" -C "${_dir}" "$@"
+}
+
+# The PR 157 scope is the hand-written, one-entry-per-line list between the
+# pr157-scope markers of doc/acceptance.md (#757). Print its lines verbatim;
+# fail when the block is missing, unterminated or empty.
+_pr157_scope_block() {
+    awk '
+        $0 == "<!-- pr157-scope:begin -->" { inside = 1; begun = 1; next }
+        $0 == "<!-- pr157-scope:end -->" { if (inside) ended = 1; inside = 0; next }
+        inside && NF { print; printed = 1 }
+        END { exit((begun && ended && printed) ? 0 : 1) }
+    ' "$1"
+}
+
+# Print the entries of the block, one per line, without the list markup.
+# Every line of the block must be exactly "- `<entry>`".
+_pr157_scope_entries() {
+    local _block _line
+    _block="$(_pr157_scope_block "$1")" || return 1
+    while IFS= read -r _line; do
+        if [[ "${_line}" =~ ^-\ \`([^\`]+)\`$ ]]; then
+            printf '%s\n' "${BASH_REMATCH[1]}"
+        else
+            printf 'malformed PR 157 scope line: %s\n' "${_line}" >&2
+            return 1
+        fi
+    done <<<"${_block}"
+}
+
+# _scope_missing_paths <git dir> <main ref> <scope text>: print every path
+# of <main ref>...HEAD that the scope does not cover; fail if there is one.
+_scope_missing_paths() {
+    local _dir="$1" _main="$2" _scope="$3" _changed _path _missing=""
+    _changed="$(_scope_git_in "${_dir}" diff --name-only "${_main}...HEAD")" || return 2
+    while IFS= read -r _path; do
+        [[ -n "${_path}" ]] || continue
+        if ! _scope_covers_path "${_scope}" "${_path}"; then
+            _missing+="${_path}"$'\n'
+        fi
+    done <<<"${_changed}"
+    [[ -z "${_missing}" ]] && return 0
+    printf '%s' "${_missing}"
+    return 1
+}
+
+# _scope_fixture <dir> <path...>: a repo whose main has one commit and whose
+# HEAD adds each <path> on top of it. Its doc/acceptance.md is the caller's.
+_scope_fixture() {
+    local _dir="$1" _path
+    shift
+    mkdir -p "${_dir}"
+    _scope_git_in "${_dir}" init -q -b main
+    _scope_git_in "${_dir}" config user.name 'Scope test'
+    _scope_git_in "${_dir}" config user.email '1+scope-test@users.noreply.github.com'
+    printf 'base\n' >"${_dir}/README.md"
+    _scope_git_in "${_dir}" add .
+    _scope_git_in "${_dir}" commit -qm base
+    _scope_git_in "${_dir}" checkout -qb m3
+    for _path in "$@"; do
+        mkdir -p "${_dir}/${_path%/*}"
+        printf 'change\n' >"${_dir}/${_path}"
+    done
+    _scope_git_in "${_dir}" add .
+    _scope_git_in "${_dir}" commit -qm change
+}
+
+_scope_fixture_doc() {
+    printf '%s\n' '本 PR(#157)相對 main 的改動範圍見下方清單。' '' \
+        '<!-- pr157-scope:begin -->' \
+        "- \`doc/acceptance.md\`" \
+        "- \`test/unit/verify_*_spec.bats\`" \
+        '<!-- pr157-scope:end -->'
+}
+
+@test "acceptance: PR 157 scope fails a fixture PR that adds a spec outside the scope" {
+    local _repo="${BATS_TEST_TMPDIR}/uncovered" _scope
+    _scope="$(_scope_fixture_doc)"
+    _scope_fixture "${_repo}" doc/acceptance.md test/unit/verify_new_spec.bats \
+        test/unit/new_spec.bats
+    run _scope_missing_paths "${_repo}" main "$(_pr157_scope_block <(printf '%s\n' "${_scope}"))"
+    assert_failure 1
+    assert_output 'test/unit/new_spec.bats'
+}
+
+@test "acceptance: PR 157 scope passes a fixture PR whose paths are all covered" {
+    local _repo="${BATS_TEST_TMPDIR}/covered" _scope
+    _scope="$(_scope_fixture_doc)"
+    _scope_fixture "${_repo}" doc/acceptance.md test/unit/verify_new_spec.bats
+    run _scope_missing_paths "${_repo}" main "$(_pr157_scope_block <(printf '%s\n' "${_scope}"))"
+    assert_success
+    assert_output ''
+}
+
+@test "acceptance: PR 157 scope entries are one per line, byte-sorted and unique" {
+    local _entries
+    _entries="$(_pr157_scope_entries "${REPO_ROOT}/doc/acceptance.md")"
+    [[ -n "${_entries}" ]] || return 1
+    assert_equal "${_entries}" "$(LC_ALL=C sort -u <<<"${_entries}")"
 }
 
 @test "acceptance: PR 157 scope covers every real changed path relative to main" {
-    local _main _head _scope _path _missing="" _changed
+    local _main _head _scope _missing=""
     if _scope_git rev-parse --verify 'origin/main^{commit}' >/dev/null 2>&1; then
         _main=origin/main
     elif _scope_git rev-parse --verify 'main^{commit}' >/dev/null 2>&1; then
@@ -129,20 +237,32 @@ _scope_git() {
     if _scope_git cat-file -e "${_main}:script/verify" 2>/dev/null; then
         skip 'main already contains PR 157 verification'
     fi
-    _scope="$(sed -n '/^本 PR(#157)/p' "${REPO_ROOT}/doc/acceptance.md")"
-    run _scope_git diff --name-only "${_main}...HEAD"
-    assert_success
-    _changed="${output}"
-    while IFS= read -r _path; do
-        [[ -n "${_path}" ]] || continue
-        if ! _scope_covers_path "${_scope}" "${_path}"; then
-            _missing+="${_path}"$'\n'
-        fi
-    done <<<"${_changed}"
-    if [[ -n "${_missing}" ]]; then
-        printf 'Paths missing from PR 157 scope:\n%s' "${_missing}" >&2
+    _scope="$(_pr157_scope_block "${REPO_ROOT}/doc/acceptance.md")"
+    _missing="$(_scope_missing_paths "${REPO_ROOT}" "${_main}" "${_scope}")" || {
+        printf 'Paths missing from PR 157 scope:\n%s\n' "${_missing}" >&2
         return 1
+    }
+}
+
+@test "acceptance: dropping one real PR 157 scope entry names exactly that path" {
+    local _main _doc="${BATS_TEST_TMPDIR}/acceptance.md" _scope
+    if _scope_git rev-parse --verify 'origin/main^{commit}' >/dev/null 2>&1; then
+        _main=origin/main
+    elif _scope_git rev-parse --verify 'main^{commit}' >/dev/null 2>&1; then
+        _main=main
+    else
+        skip 'no main ref resolves'
     fi
+    if _scope_git cat-file -e "${_main}:script/verify" 2>/dev/null; then
+        skip 'main already contains PR 157 verification'
+    fi
+    run grep -Fx -- "- \`test/unit/manifest_doc_spec.bats\`" "${REPO_ROOT}/doc/acceptance.md"
+    assert_success
+    grep -Fxv -- "- \`test/unit/manifest_doc_spec.bats\`" "${REPO_ROOT}/doc/acceptance.md" >"${_doc}"
+    _scope="$(_pr157_scope_block "${_doc}")"
+    run _scope_missing_paths "${REPO_ROOT}" "${_main}" "${_scope}"
+    assert_failure 1
+    assert_output 'test/unit/manifest_doc_spec.bats'
 }
 
 @test "acceptance: later PR skips PR 157 scope once main contains verification" {
@@ -153,8 +273,7 @@ _scope_git() {
     cp "${BATS_TEST_FILENAME}" "${_spec}"
     cp "${REPO_ROOT}/test/helper/common.bash" "${_repo}/test/helper/"
     cp "${REPO_ROOT}/script/verify/all.sh" "${_repo}/script/verify/"
-    sed -n '/^本 PR(#157)/p' "${REPO_ROOT}/doc/acceptance.md" \
-        >"${_repo}/doc/acceptance.md"
+    cp "${REPO_ROOT}/doc/acceptance.md" "${_repo}/doc/acceptance.md"
     git -C "${_repo}" init -q -b main
     git -C "${_repo}" config user.name 'Scope test'
     git -C "${_repo}" config user.email '1+scope-test@users.noreply.github.com'
@@ -411,8 +530,9 @@ _stub_calls() {
 
 @test "acceptance: issue 568 stress evidence stays out of repository scope" {
     [ ! -e "${REPO_ROOT}/doc/evidence/568-hup-fixture-fork-window.md" ]
-    local scope
-    scope="$(sed -n '/^本 PR(#157)/p' "${REPO_ROOT}/doc/acceptance.md")"
-    run printf '%s\n' "${scope}"
-    refute_output --partial "\`doc/evidence/\`"
+    local entries
+    entries="$(_pr157_scope_entries "${REPO_ROOT}/doc/acceptance.md")"
+    [[ -n "${entries}" ]] || return 1
+    run grep -Fx -- 'doc/evidence/' <<<"${entries}"
+    assert_failure 1
 }

@@ -505,7 +505,7 @@ recipe 名稱與說明以根目錄 `justfile`、`script/box/justfile.box`、`scr
 每個「驗收方式」區塊都是**一行 `just verify <動作> [ITEM]` 加上 `echo rc=$?`**,以 **bash** 執行(fish 使用者先打 `bash`);**請原樣貼上,不要改寫**,改寫過的區塊不算數。文件本身已經不帶任何 shell 邏輯 —— 判準全部搬進 repo 的 `script/verify/`(`ui.sh` / `gate.sh` / `setup.sh` / `diagram.sh` / `realbox.sh` / `evidence.sh`),由 `just verify` namespace 轉發。每支腳本自己建立並清理臨時目錄 / 暫存檔,自己守住每條管線與每個計數(先判外部指令自己的結束碼再用它的輸出、每個計數都與它的退化情況分得開),跑不動的環境一律明講並回非 0,不會靜默跳過;`test/unit/verify_*_spec.bats` 再以「印得出像樣輸出、結束碼卻非 0」的 stub 證明它們咬得動。**裸 `just verify` 只列出動作、什麼都不驗**(它自己會印一行 `NOTE: this only lists the verify groups - nothing has been verified. ...` 並回 0,那個 rc=0 不代表通過;#182);**一次跑完全部非實機驗收的是 `just verify all`**(依序 ui、gate、setup、diagram、evidence,遇第一個失敗即停,每組一行摘要加一行總判決,任一組失敗就回非 0;5 是實機,需 `--allow-real-box`,不在內)。`just verify <動作> --help` 是該腳本自己的說明,`just verify <動作> --list` 列出它涵蓋的項目。
 
 搬出文件的原因是 #176 item 8:維護者那一輪跑 2.2 得到 9/10 `order=BAD`,但十份 PR 描述其實都滿足 2.2 的主張(同一份判定邏輯實測 10/10),awk 實作、locale、CRLF、貼上時的 shell 與縮排都已逐項排除,**根因未解** —— 那一輪跑在維護者的指令執行器裡,那個環境在這裡沒有、重現不了;處置因此是結構性的(把邏輯搬出文件),不是找出成因。逐項排除的指令與輸出見 `doc/evidence/README.md`。
-本 PR(#157)相對 main 的改動範圍（`origin/main...m3/5-acceptance`）包含七階段措辭與流程圖同步（`README.md`、`doc/structure.md`、`doc/diagram/flow.drawio.svg`、`test/unit/diagram_spec.bats`、`test/unit/ci_yml_spec.bats`、`doc/adr/0012-invariant-platform-neutral.md`）、驗收清單與證據（含 2.1 CPU 負載重現 skip 豁免與 runner 清單一致性 spec；`doc/acceptance.md`、`doc/evidence/README.md`、`doc/evidence/tdd.sh`、`doc/evidence/tdd.awk`、`doc/evidence/negative/`）、300 ms 門檻措辭同步（`doc/design.md`、`doc/enter.md`、`doc/manifest.md`、`test/unit/manifest_doc_spec.bats`；≤ 300 ms）、ADR 0008／0010 的措辭、本機守門選取描述（`doc/adr/0014-local-tests-changed-only.md`）、驗收程式與入口（`script/verify/`；逾時清理共用程式 `lib/verify_run.sh`、中斷矩陣共用程式 `lib/realbox_interrupt.sh`、gate 判讀共用程式 `lib/verify_busy_latency.awk`、`justfile`）、建盒預設 fish（`script/box/assemble.sh`）、盒內指令說明移除過時的 rm 承諾（`script/box/justfile.box`）、延遲 gate 補讀盒子 cgroup PSI（`script/box/bench.sh`、`doc/adr/0003-latency-gate-inconclusive.md`）、產品共用程式（`lib/config.sh`、`lib/config_backup.sh`、`lib/guard.sh`、`lib/home.sh`、`lib/distrobox_manager.sh`；後者由 `lib/home.sh` 抽出，行為不變）、測試入口與完整歷史 checkout（`script/test/test.sh`、`.github/workflows/ci.yml`）與相關測試（`test/unit/bench_spec.bats`、`test/unit/verify_*_spec.bats`、`test/unit/test_sh_spec.bats`、`test/unit/test_changed_spec.bats`、`test/unit/ci_gate_spec.bats`、`test/unit/contract_spec.bats`、`doc/contract.md`、`doc/adr/0004-invariant-user-content.md`、`test/unit/adr/0004_spec.bats`、`test/unit/adr/0010_spec.bats`、`test/unit/justfile_spec.bats`、`test/unit/enter_spec.bats`、`test/unit/enter_doc_spec.bats`、`test/unit/config_backup_spec.bats`、`test/unit/config_backup_dangling_spec.bats`、`test/unit/guard_spec.bats`、`test/unit/config_spec.bats`（含讀寫同步點與有期限並行 fixture：`test/unit/fixture/config_race.sh`）、config mutation 守門與案例（`test/unit/config_mutation_drift_spec.bats`、`test/unit/config_mutation_spec.bats`，以及註解同步的 `test/unit/config_owner_spec.bats`、`test/unit/setup_spec.bats`）、`test/unit/acceptance_doc_spec.bats`、`test/unit/assemble_spec.bats`、`test/unit/fixture/`、`test/helper/`、`test/system/real_engine_spec.bats`、`test/system/real_assemble_spec.bats`）。逐 PR 的來源見 PR #157 說明，這裡只列範圍，不逐 PR 註記。**`just verify` namespace 與 `script/verify/` 只在本 PR 分支上**，所以下面直接 clone 本 PR 分支 `m3/5-acceptance`（= main 加上述變更）。clone 成 main 的話，每個區塊都會是 just 自己的 `Justfile does not contain recipe`（rc=1），什麼都不會跑。
+本 PR(#157)相對 main 的改動範圍（`origin/main...m3/5-acceptance`）包含七階段措辭與流程圖同步、驗收清單與證據（含 2.1 CPU 負載重現 skip 豁免與 runner 清單一致性 spec）、300 ms 門檻措辭同步（≤ 300 ms）、ADR 0008／0010 的措辭、本機守門選取描述、驗收程式與入口、建盒預設 fish、盒內指令說明移除過時的 rm 承諾、延遲 gate 補讀盒子 cgroup PSI、產品共用程式（`lib/distrobox_manager.sh` 由 `lib/home.sh` 抽出，行為不變）、測試入口與完整歷史 checkout 與相關測試；逐檔的範圍條目見下方「PR #157 範圍條目」清單。逐 PR 的來源見 PR #157 說明，這裡只列範圍，不逐 PR 註記。**`just verify` namespace 與 `script/verify/` 只在本 PR 分支上**，所以下面直接 clone 本 PR 分支 `m3/5-acceptance`（= main 加上述變更）。clone 成 main 的話，每個區塊都會是 just 自己的 `Justfile does not contain recipe`（rc=1），什麼都不會跑。
 
 ```bash
 git clone --branch m3/5-acceptance https://github.com/ycpss91255/worktool.git && cd worktool   # M3 deliveries: see PR #157 delivery table linked below.
@@ -546,6 +546,73 @@ rc=0
 (每組自己的預期輸出照常穿插在它的摘要行之前,逐項對照見下面各項;上面只列 `all.sh` 自己印的摘要與判決。任一組失敗時,那一組印 `verify all: <組> FAIL (rc=N)`(跑不動則 `UNAVAILABLE (rc=3)`),接著 `verify all: VERDICT FAIL at <組> (rc=N); passed: ...; not run: ...`,後面的組不再跑,整段 rc 非 0。5 另外以 `just verify realbox --allow-real-box ...` 在實機上跑。)
 
 3 與 5 的輸出含機器相關路徑,下面以 `<H>`(臨時 HOME)、`<D>`(host 上 distrobox 執行檔的絕對路徑,例如 `/usr/local/bin/distrobox`)、`<G>`(host 上 ghostty 執行檔的絕對路徑,`command -v ghostty` 的結果)代表。3 的每一項由 `script/verify/setup.sh` 自己算出這幾個路徑、再把輸出裡的它們換成佔位符,所以 3 的預期輸出在任何安裝位置都逐字相符(round 10:更早的版本把 ghostty 路徑寫死成 `/usr/bin/ghostty`,裝在別處的機器會無故變紅);5 的輸出沒有這層轉換,請自己對照。
+
+PR #157 範圍條目（一行一條，依位元組序排序，即 `LC_ALL=C sort`）：條目可以是完整路徑、以 `/` 結尾的目錄或 glob。M3 的 PR 新增範圍外的路徑時，在這份清單插入一行，不改上面「本 PR(#157)」那一行；`test/unit/verify_all_spec.bats` 以這份清單比對 `origin/main...m3/5-acceptance` 改到的每個路徑，漏列就失敗。
+
+<!-- pr157-scope:begin -->
+- `.github/workflows/ci.yml`
+- `README.md`
+- `doc/acceptance.md`
+- `doc/adr/0003-latency-gate-inconclusive.md`
+- `doc/adr/0004-invariant-user-content.md`
+- `doc/adr/0008-invariant-minimal-interface.md`
+- `doc/adr/0010-invariant-black-box-verifiable.md`
+- `doc/adr/0012-invariant-platform-neutral.md`
+- `doc/adr/0014-local-tests-changed-only.md`
+- `doc/contract.md`
+- `doc/design.md`
+- `doc/diagram/flow.drawio.svg`
+- `doc/enter.md`
+- `doc/evidence/README.md`
+- `doc/evidence/negative/`
+- `doc/evidence/tdd.awk`
+- `doc/evidence/tdd.sh`
+- `doc/manifest.md`
+- `doc/structure.md`
+- `justfile`
+- `lib/config.sh`
+- `lib/config_backup.sh`
+- `lib/distrobox_manager.sh`
+- `lib/guard.sh`
+- `lib/home.sh`
+- `lib/realbox_interrupt.sh`
+- `lib/verify_busy_latency.awk`
+- `lib/verify_run.sh`
+- `script/box/assemble.sh`
+- `script/box/bench.sh`
+- `script/box/justfile.box`
+- `script/test/test.sh`
+- `script/verify/`
+- `test/helper/`
+- `test/system/real_assemble_spec.bats`
+- `test/system/real_engine_spec.bats`
+- `test/unit/acceptance_doc_spec.bats`
+- `test/unit/adr/0004_spec.bats`
+- `test/unit/adr/0010_spec.bats`
+- `test/unit/assemble_spec.bats`
+- `test/unit/bench_spec.bats`
+- `test/unit/ci_gate_spec.bats`
+- `test/unit/ci_yml_spec.bats`
+- `test/unit/config_backup_dangling_spec.bats`
+- `test/unit/config_backup_spec.bats`
+- `test/unit/config_mutation_drift_spec.bats`
+- `test/unit/config_mutation_spec.bats`
+- `test/unit/config_owner_spec.bats`
+- `test/unit/config_spec.bats`
+- `test/unit/contract_spec.bats`
+- `test/unit/diagram_spec.bats`
+- `test/unit/enter_doc_spec.bats`
+- `test/unit/enter_spec.bats`
+- `test/unit/fixture/`
+- `test/unit/fixture/config_race.sh`
+- `test/unit/guard_spec.bats`
+- `test/unit/justfile_spec.bats`
+- `test/unit/manifest_doc_spec.bats`
+- `test/unit/setup_spec.bats`
+- `test/unit/test_changed_spec.bats`
+- `test/unit/test_sh_spec.bats`
+- `test/unit/verify_*_spec.bats`
+<!-- pr157-scope:end -->
 
 ### 威脅模型:這些檢查程式擋得住什麼、擋不住什麼
 
